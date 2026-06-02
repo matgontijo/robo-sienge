@@ -334,7 +334,9 @@
             <input type="password" id="login-pass" class="login-input" placeholder="Senha">
             
             <button class="login-btn" onclick="handleLogin()">Entrar</button>
-            <p style="margin-top: 15px; font-size: 0.8rem; color: #888;">Demonstração: admin / trk2026</p>
+            <div style="margin-top: 1.5rem; color: #888; font-size: 0.9rem;">
+                Demonstração: rafael / trk123
+            </div>
         </div>
     </div>
 
@@ -599,7 +601,7 @@
             const error = document.getElementById('login-error');
             const loginBox = document.querySelector('.login-box');
             
-            if(user === 'admin' && pass === 'trk2026') {
+            if((user === 'admin' && pass === 'trk2026') || (user === 'rafael' && pass === 'trk123')) {
                 // Success
                 sessionStorage.setItem('trk_logged_in', 'true');
                 error.style.display = 'none';
