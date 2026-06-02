@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Conciliação</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="login-wrapper" id="login-container">
+        <div class="login-glass">
+            <div class="login-logo">🤖</div>
+            <h2>Sienge Robot</h2>
+            <p>Conciliação Contas a Pagar</p>
+            <div class="input-group">
+                <input type="text" id="username" placeholder="Usuário" autocomplete="username">
+            </div>
+            <div class="input-group">
+                <input type="password" id="password" placeholder="Senha" autocomplete="current-password">
+            </div>
+            <div id="login-error" class="login-error">Usuário ou senha inválidos.</div>
+            <button class="btn-login" id="btn-login" onclick="login()">Acessar Painel</button>
+        </div>
+    </div>
+
+    <div class="container" id="app-container" style="display: none;">
+        <div class="header">
+            <div>
+                <h1>🤖 Sienge Robot</h1>
+                <div class="main-tabs">
+                    <button class="tab-btn active" onclick="switchMainTab('dashboard')">Visão Geral</button>
+                    <button class="tab-btn" onclick="switchMainTab('settings')">Configurações</button>
+                </div>
+            </div>
+            <button class="btn-primary" onclick="rodarAgora()">▶ Rodar Agora</button>
+        </div>
+
+        <div id="view-dashboard">
+            <div class="cards-row">
+            <div class="card" id="card-ultima">
+                <div class="card-title">Última Execução</div>
+                <div class="card-value" id="val-ultima-status">-</div>
+                <div class="card-sub" id="val-ultima-data">-</div>
+            </div>
+            <div class="card" id="card-titulos">
+                <div class="card-title">Títulos Hoje</div>
+                <div class="card-value" id="val-titulos-hoje">0</div>
+                <div class="card-sub">Processados</div>
+            </div>
+            <div class="card" id="card-divergencias">
+                <div class="card-title">Divergências Hoje</div>
+                <div class="card-value" id="val-diverg-hoje">0</div>
+                <div class="card-sub" id="val-taxa-diverg">0% taxa</div>
+            </div>
+            <div class="card" id="card-criticos">
+                <div class="card-title">Críticos Hoje</div>
+                <div class="card-value text-danger" id="val-criticos-hoje">0</div>
+                <div class="card-sub">Atenção imediata</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="grafico-7dias"></canvas>
+        </div>
+
+        <div class="table-container">
+            <h3>HISTÓRICO DE EXECUÇÕES</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Início</th>
+                        <th>Fim</th>
+                        <th>Títulos</th>
+                        <th>Diverg.</th>
+                        <th>Críticos</th>
+                        <th>Origem</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-historico">
+                </tbody>
+            </table>
+        </div>
+
+        <div class="table-container" id="detalhes-container">
+            <h3>DETALHES DA EXECUÇÃO <span id="detalhes-id"></span></h3>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('divergencias')">Divergências</div>
+                <div class="tab" onclick="switchTab('logs')">Logs da Execução</div>
+                <div class="tab" id="tab-relatorio" style="display:none;" onclick="baixarRelatorio()">📥 Baixar Relatório Excel</div>
+                <div class="tab" id="tab-abortar" style="display:none; color: var(--critica)" onclick="abortarExecucao()">🛑 Abortar</div>
+            </div>
+
+            <div id="tab-divergencias" class="tab-content active">
+                <div class="filters">
+                    <select id="filtro-crit">
+                        <option value="Todas">Todas as Criticidades</option>
+                        <option value="CRITICA">Apenas CRÍTICA</option>
+                        <option value="ATENCAO">Apenas ATENÇÃO</option>
+                    </select>
+                    <input type="text" id="filtro-busca" placeholder="Buscar título ou fornecedor...">
+                </div>
+                
+                <table style="font-size: 0.9rem;">
+                    <thead>
+                        <tr>
+                            <th>Título Sienge</th>
+                            <th>Fornecedor</th>
+                            <th>Tipo Divergência</th>
+                            <th>Campo</th>
+                            <th>Valor Sienge</th>
+                            <th>Valor NF-e / Boleto</th>
+                            <th>Criticidade</th>
+                            <th>Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-divergencias">
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="tab-logs" class="tab-content">
+                <div class="terminal" id="terminal-logs"></div>
+            </div>
+        </div>
+        </div> <!-- Fim view-dashboard -->
+
+        <!-- VIEW SETTINGS -->
+        <div id="view-settings" style="display: none;">
+            <div class="settings-grid">
+                
+                <!-- SIENGE -->
+                <div class="settings-card">
+                    <div class="settings-header">ERP Sienge</div>
+                    <div class="settings-desc">Credenciais de acesso à API do Sienge para buscar os títulos a pagar.</div>
+                    <div class="input-group">
+                        <label>Base URL</label>
+                        <input type="text" id="cfg_SIENGE_BASE_URL" placeholder="https://api.sienge.com.br...">
+                    </div>
+                    <div class="input-group">
+                        <label>Usuário Sienge</label>
+                        <input type="text" id="cfg_SIENGE_USERNAME">
+                    </div>
+                    <div class="input-group">
+                        <label>Senha / Token</label>
+                        <input type="password" id="cfg_SIENGE_PASSWORD">
+                    </div>
+                </div>
+
+                <!-- SANTANDER -->
+                <div class="settings-card">
+                    <div class="settings-header">Banco Santander DDA</div>
+                    <div class="settings-desc">Acesso à API PIX/DDA do Santander para conciliar boletos. <strong>Custo: Gratuito via Sandbox, consulte gerente para Produção.</strong></div>
+                    <div class="input-group">
+                        <label>Client ID</label>
+                        <input type="text" id="cfg_SANTANDER_CLIENT_ID">
+                    </div>
+                    <div class="input-group">
+                        <label>Client Secret</label>
+                        <input type="password" id="cfg_SANTANDER_CLIENT_SECRET">
+                    </div>
+                    <div class="input-group">
+                        <label>Certificado (Caminho)</label>
+                        <input type="text" id="cfg_SANTANDER_CERT_PATH">
+                    </div>
+                    <div class="input-group">
+                        <label>Senha Certificado</label>
+                        <input type="password" id="cfg_SANTANDER_CERT_PASSWORD">
+                    </div>
+                    <div class="input-group">
+                        <label>Ambiente</label>
+                        <select id="cfg_SANTANDER_ENV">
+                            <option value="sandbox">Sandbox</option>
+                            <option value="production">Produção</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- ANTHROPIC -->
+                <div class="settings-card">
+                    <div class="settings-header">Inteligência Artificial (Anthropic Claude)</div>
+                    <div class="settings-desc">Responsável por ler e extrair dados de notas scaneadas via OCR. <strong>Custo médio (Haiku): ~$0.25 USD por cada 1.000 imagens/páginas.</strong></div>
+                    <div class="input-group">
+                        <label>API Key</label>
+                        <input type="password" id="cfg_ANTHROPIC_API_KEY">
+                    </div>
+                </div>
+
+                <!-- SEFAZ -->
+                <div class="settings-card">
+                    <div class="settings-header">Consulta Sefaz</div>
+                    <div class="settings-desc">Buscar XML e gerar DANFE local. Usa certificado digital A1.</div>
+                    <div class="input-group">
+                        <label>CNPJ Empresa</label>
+                        <input type="text" id="cfg_SEFAZ_CNPJ">
+                    </div>
+                    <div class="input-group">
+                        <label>Caminho do PFX</label>
+                        <input type="text" id="cfg_SEFAZ_CERT_PATH">
+                    </div>
+                    <div class="input-group">
+                        <label>Senha PFX</label>
+                        <input type="password" id="cfg_SEFAZ_CERT_PASSWORD">
+                    </div>
+                </div>
+
+                <!-- SMTP & NOTIFICACOES -->
+                <div class="settings-card">
+                    <div class="settings-header">Notificações e Emails</div>
+                    <div class="settings-desc">Para onde enviar os relatórios diários de fechamento.</div>
+                    <div class="input-group">
+                        <label>Destinatários (separados por vírgula)</label>
+                        <input type="text" id="cfg_NOTIF_EMAIL_DESTINO">
+                    </div>
+                    <div class="input-group">
+                        <label>SMTP Host</label>
+                        <input type="text" id="cfg_SMTP_HOST">
+                    </div>
+                    <div class="input-group">
+                        <label>SMTP User</label>
+                        <input type="text" id="cfg_SMTP_USER">
+                    </div>
+                    <div class="input-group">
+                        <label>SMTP Password</label>
+                        <input type="password" id="cfg_SMTP_PASSWORD">
+                    </div>
+                </div>
+
+            </div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button class="btn-primary" onclick="saveConfig()">💾 Salvar Configurações</button>
+            </div>
+        </div> <!-- Fim view-settings -->
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
