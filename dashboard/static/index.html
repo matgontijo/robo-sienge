@@ -66,22 +66,24 @@
 
         <div class="table-container">
             <h3>HISTÓRICO DE EXECUÇÕES</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Início</th>
-                        <th>Fim</th>
-                        <th>Títulos</th>
-                        <th>Diverg.</th>
-                        <th>Críticos</th>
-                        <th>Origem</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="tbody-historico">
-                </tbody>
-            </table>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Início</th>
+                            <th>Fim</th>
+                            <th>Títulos</th>
+                            <th>Diverg.</th>
+                            <th>Críticos</th>
+                            <th>Origem</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-historico">
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="table-container" id="detalhes-container">
@@ -104,22 +106,24 @@
                     <input type="text" id="filtro-busca" placeholder="Buscar título ou fornecedor...">
                 </div>
                 
-                <table style="font-size: 0.9rem;">
-                    <thead>
-                        <tr>
-                            <th>Título Sienge</th>
-                            <th>Fornecedor</th>
-                            <th>Tipo Divergência</th>
-                            <th>Campo</th>
-                            <th>Valor Sienge</th>
-                            <th>Valor NF-e / Boleto</th>
-                            <th>Criticidade</th>
-                            <th>Ação</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tbody-divergencias">
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table style="font-size: 0.9rem;">
+                        <thead>
+                            <tr>
+                                <th>Título Sienge</th>
+                                <th>Fornecedor</th>
+                                <th>Tipo Divergência</th>
+                                <th>Campo</th>
+                                <th>Valor Sienge</th>
+                                <th>Valor NF-e / Boleto</th>
+                                <th>Criticidade</th>
+                                <th>Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-divergencias">
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div id="tab-logs" class="tab-content">
