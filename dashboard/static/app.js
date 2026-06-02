@@ -382,6 +382,7 @@ function switchMainTab(viewName) {
     
     document.getElementById('view-dashboard').style.display = viewName === 'dashboard' ? 'block' : 'none';
     document.getElementById('view-settings').style.display = viewName === 'settings' ? 'block' : 'none';
+    document.getElementById('view-presentation').style.display = viewName === 'presentation' ? 'block' : 'none';
     
     if (viewName === 'settings') {
         fetchConfig();
