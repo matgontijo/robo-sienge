@@ -99,9 +99,8 @@ def validate_config():
             missing_vars.append(name)
             
     if missing_vars:
-        msg = f"Variáveis de ambiente ausentes: {', '.join(missing_vars)}"
-        logger.critical(msg)
-        raise SystemExit(msg)
+        msg = f"Variáveis de ambiente ausentes: {', '.join(missing_vars)}. Configure-as pelo Dashboard Web."
+        logger.warning(msg)
 
 def reload_config():
     """Recarrega as variveis do .env para a memria."""
