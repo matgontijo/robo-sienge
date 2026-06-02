@@ -6,21 +6,78 @@
     <title>Dashboard Conciliação</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* TRK Login Styles */
+        .login-wrapper {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: #fff;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.6s ease;
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .login-box {
+            background: #fff;
+            padding: 4rem;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            border: 4px solid #000;
+            box-shadow: 15px 15px 0px #000;
+            transition: transform 0.3s;
+        }
+        .logo-box {
+            background: #000;
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 20px;
+            font-size: 1.5rem;
+            font-weight: 300;
+            letter-spacing: 4px;
+            margin: 0 auto 2rem auto;
+        }
+        .login-box h2 {
+            font-size: 2.5rem; margin-bottom: 0.5rem; text-transform: uppercase; border: none; color: #000;
+        }
+        .login-box p {
+            color: #666; font-size: 1.2rem; margin-bottom: 2rem;
+        }
+        .login-input {
+            width: 100%; padding: 15px; margin-bottom: 15px; border: 2px solid #000; font-size: 1.2rem; background: #e8f0fe;
+            box-sizing: border-box;
+        }
+        .btn-trk {
+            width: 100%; padding: 15px; background: #000; color: #fff; font-size: 1.2rem; font-weight: 800; border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 2px; transition: transform 0.2s;
+        }
+        .btn-trk:hover {
+            transform: translateY(-2px);
+        }
+        #login-error {
+            display: none; color: #d32f2f; background: #ffebee; padding: 10px; margin-bottom: 20px; border: 1px solid #d32f2f; font-weight: bold;
+        }
+    </style>
 </head>
 <body>
     <div class="login-wrapper" id="login-container">
-        <div class="login-glass">
-            <div class="login-logo">🤖</div>
-            <h2>Sienge Robot</h2>
-            <p>Conciliação Contas a Pagar</p>
-            <div class="input-group">
-                <input type="text" id="username" placeholder="Usuário" autocomplete="username">
+        <div class="login-box">
+            <div class="logo-box">TRK</div>
+            <h2>Acesso Restrito</h2>
+            <p>Sistema de Conciliação TRK</p>
+            
+            <div id="login-error">Credenciais inválidas.</div>
+
+            <input type="text" id="username" class="login-input" placeholder="Usuário" autocomplete="username">
+            <input type="password" id="password" class="login-input" style="margin-bottom: 25px;" placeholder="Senha" autocomplete="current-password">
+            
+            <button class="btn-trk" id="btn-login" onclick="login()">Entrar</button>
+            <div style="margin-top: 1.5rem; color: #888; font-size: 0.9rem;">
+                Dúvidas? Contate o administrador.
             </div>
-            <div class="input-group">
-                <input type="password" id="password" placeholder="Senha" autocomplete="current-password">
-            </div>
-            <div id="login-error" class="login-error">Usuário ou senha inválidos.</div>
-            <button class="btn-login" id="btn-login" onclick="login()">Acessar Painel</button>
         </div>
     </div>
 

@@ -92,7 +92,18 @@ def seed_admin_user():
                 role="ADMIN"
             )
             db.add(novo_admin)
-            db.commit()
+            
+        rafael = db.query(Usuario).filter(Usuario.username == "Rafael").first()
+        if not rafael:
+            hashed_password = pwd_context.hash("trk123")
+            novo_rafael = Usuario(
+                username="Rafael",
+                password_hash=hashed_password,
+                role="ADMIN"
+            )
+            db.add(novo_rafael)
+            
+        db.commit()
     finally:
         db.close()
 
