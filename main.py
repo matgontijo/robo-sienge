@@ -27,10 +27,16 @@ def main():
     full_parser = subparsers.add_parser("full", help="Inicia o scheduler e o painel web juntos (Modo Producao)")
     full_parser.add_argument("--debug", action="store_true", help="Ativa logs nvel DEBUG")
     
+    # add-user
+    add_user_parser = subparsers.add_parser("add-user", help="Adiciona um novo usuario ao banco de dados")
+    add_user_parser.add_argument("username", type=str, help="Nome de usuario")
+    add_user_parser.add_argument("password", type=str, help="Senha do usuario")
+    add_user_parser.add_argument("role", type=str, choices=["ADMIN", "OPERADOR", "LEITURA"], help="Nivel de acesso (ADMIN, OPERADOR, LEITURA)")
+    
     args = parser.parse_args()
     
     # Configura DEBUG se necessrio
-    if args.debug:
+    if getattr(args, "debug", False):
         logger.remove()
         logger.add(
             sys.stderr,
@@ -64,8 +70,25 @@ def main():
         orchestrator.agendar()
     elif args.command == "dashboard":
         import uvicorn
-        logger.info(f"Iniciando painel Web em {config.DASHBOARD_HOST}:{config.DASHBOARD_PORT}")
-        uvicorn.run("dashboard.app:app", host=config.DASHBOARD_HOST, port=config.DASHBOARD_PORT)
+        logger.info(f"Iniciando MODO DASHBOARD na porta {config.DASHBOARD_PORT}")
+        uvicorn.run("dashboard.app:app", host=config.DASHBOARD_HOST, port=config.DASHBOARD_PORT, log_level="info" if not args.debug else "debug")
+        
+    elif args.command == "add-user":
+        from dashboard import database as db
+        db_session = db.SessionLocal()
+        try:
+            existing = db_session.query(db.Usuario).filter(db.Usuario.username == args.username).first()
+            if existing:
+                logger.error(f"Usuário {args.username} já existe.")
+                return
+            
+            hashed_pw = db.pwd_context.hash(args.password)
+            novo = db.Usuario(username=args.username, password_hash=hashed_pw, role=args.role)
+            db_session.add(novo)
+            db_session.commit()
+            logger.success(f"Usuário {args.username} criado com sucesso (Role: {args.role}).")
+        finally:
+            db_session.close()
         
     elif args.command == "full":
         import threading

@@ -17,3 +17,5 @@ uvicorn[standard]>=0.29.0
 sqlalchemy>=2.0.0
 python-multipart>=0.0.9
 PyMuPDF>=1.23.0
+passlib>=1.7.4
+bcrypt==3.2.2

@@ -4,9 +4,21 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Date, Float, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
+from passlib.context import CryptContext
 import config
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 Base = declarative_base()
+
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    role = Column(String) # ADMIN | OPERADOR | LEITURA
+    criado_em = Column(DateTime, default=datetime.now)
 
 class Execucao(Base):
     __tablename__ = "execucoes"
@@ -67,6 +79,24 @@ class LogExecucao(Base):
 engine = create_engine(f"sqlite:///{config.DASHBOARD_DB_PATH}", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def seed_admin_user():
+    db = SessionLocal()
+    try:
+        admin = db.query(Usuario).filter(Usuario.username == "admin").first()
+        if not admin:
+            hashed_password = pwd_context.hash("trk123")
+            novo_admin = Usuario(
+                username="admin",
+                password_hash=hashed_password,
+                role="ADMIN"
+            )
+            db.add(novo_admin)
+            db.commit()
+    finally:
+        db.close()
+
+seed_admin_user()
 
 # ==========================================
 # Funções Utilitárias

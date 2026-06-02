@@ -52,6 +52,10 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 # ---------------------------------------------------------
 api_route = app.router
 
+@app.get("/api/me", dependencies=[Depends(get_current_user)])
+def get_me(current_user: db.Usuario = Depends(get_current_user)):
+    return {"username": current_user.username, "role": current_user.role}
+
 @app.get("/api/stats", dependencies=[Depends(get_current_user)])
 def get_stats():
     return db.get_stats_gerais()
@@ -117,7 +121,10 @@ def download_danfe(execucao_id: int, path: str):
     return FileResponse(path=abs_path, filename=os.path.basename(abs_path), media_type="application/pdf")
 
 @app.post("/api/execucoes/iniciar", dependencies=[Depends(get_current_user)])
-def iniciar_execucao(req: RunRequest):
+def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_current_user)):
+    if current_user.role == "LEITURA":
+        raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
+        
     # Verifica se já tem alguma execução rodando
     execs = db.get_execucoes(limit=10)
     for e in execs:
@@ -147,7 +154,10 @@ def iniciar_execucao(req: RunRequest):
     return {"execucao_id": 0}
 
 @app.post("/api/execucoes/{execucao_id}/abortar", dependencies=[Depends(get_current_user)])
-def abortar_execucao(execucao_id: int):
+def abortar_execucao(execucao_id: int, current_user: db.Usuario = Depends(get_current_user)):
+    if current_user.role == "LEITURA":
+        raise HTTPException(status_code=403, detail="Usuário sem permissão para abortar execução")
+        
     execucao = db.get_execucao(execucao_id)
     if not execucao:
         raise HTTPException(status_code=404, detail="Execução não encontrada")
@@ -163,14 +173,20 @@ def abortar_execucao(execucao_id: int):
 import dotenv
 
 @app.get("/api/config", dependencies=[Depends(get_current_user)])
-def get_config():
+def get_config(current_user: db.Usuario = Depends(get_current_user)):
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Apenas ADMIN pode visualizar as configurações")
+        
     env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
     if not os.path.exists(env_path):
         return {}
     return dotenv.dotenv_values(env_path)
 
 @app.post("/api/config", dependencies=[Depends(get_current_user)])
-def update_config(payload: dict):
+def update_config(payload: dict, current_user: db.Usuario = Depends(get_current_user)):
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Apenas ADMIN pode alterar as configurações")
+        
     env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
     if not os.path.exists(env_path):
         open(env_path, 'a').close()
@@ -207,10 +223,15 @@ async def stream_logs(execucao_id: int, req: Request):
             raise Exception()
         decoded = base64.b64decode(credentials).decode("ascii")
         username, _, password = decoded.partition(":")
-        import secrets
-        if not (secrets.compare_digest(username, config.DASHBOARD_USER) and 
-                secrets.compare_digest(password, config.DASHBOARD_PASSWORD)):
-            raise Exception()
+        
+        db_session = db.SessionLocal()
+        try:
+            user = db_session.query(db.Usuario).filter(db.Usuario.username == username).first()
+            if not user or not db.pwd_context.verify(password, user.password_hash):
+                raise Exception()
+        finally:
+            db_session.close()
+            
     except Exception:
         raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Basic"})
 

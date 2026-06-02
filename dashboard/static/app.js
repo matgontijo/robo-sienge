@@ -3,6 +3,7 @@ let chartInstance = null;
 let currentExecId = null;
 let eventSource = null;
 let allDivergencias = [];
+let userRole = null;
 
 window.onload = () => {
     if (token) {
@@ -58,6 +59,23 @@ function getHeaders() {
 }
 
 async function initDashboard() {
+    try {
+        const meRes = await fetch("/api/me", { headers: getHeaders() });
+        if (meRes.ok) {
+            const meData = await meRes.json();
+            userRole = meData.role;
+            
+            if (userRole !== 'ADMIN') {
+                const confTabs = document.querySelectorAll('.tab-btn');
+                if(confTabs.length > 1) confTabs[1].style.display = 'none';
+            }
+            if (userRole === 'LEITURA') {
+                const rodarBtn = document.querySelector('.header .btn-primary');
+                if(rodarBtn) rodarBtn.style.display = 'none';
+            }
+        }
+    } catch(e) { console.error(e); }
+
     await fetchStats();
     await fetchHistorico();
     
@@ -192,7 +210,7 @@ async function selectExecucao(id) {
     
     // Tabs visibility
     document.getElementById("tab-relatorio").style.display = data.execucao.status === "CONCLUIDO" ? "block" : "none";
-    document.getElementById("tab-abortar").style.display = data.execucao.status === "RODANDO" ? "block" : "none";
+    document.getElementById("tab-abortar").style.display = (data.execucao.status === "RODANDO" && userRole !== "LEITURA") ? "block" : "none";
     
     // Load logs
     const rL = await fetch(`/api/execucoes/${id}/logs`, { headers: getHeaders() });
