@@ -91,15 +91,27 @@ def processar_titulo(
             if not titulo.fornecedor_cnpj and titulo.nf_cnpj_emitente:
                 titulo.fornecedor_cnpj = titulo.nf_cnpj_emitente
 
-        # a. Baixar anexo (somente se já temos o ID interno e o Sienge disponível)
+        # a. Baixar anexos (somente se já temos o ID interno e o Sienge disponível)
         if titulo.id is not None and sienge_cli is not None:
-            titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
+            if from_report:
+                # Baixa TODOS os anexos, salva em pasta e prioriza NF e boleto
+                import os
+                pasta = os.path.join(
+                    config.OUTPUT_DIR, "anexos",
+                    f"{(titulo.numero or 'sem').strip()}_{(titulo.parcela or '0')}"
+                )
+                anexos = sienge_cli.baixar_anexos_titulo(titulo.id, pasta)
+                titulo.attachment_bytes = anexos.get("nf_bytes") or anexos.get("boleto_bytes")
 
-        # a.1 Se houver boleto no anexo, extrair dados para cruzamento posterior
-        if from_report and titulo.attachment_bytes and reader is not None:
-            boleto_anexo = reader.extrair_boleto(titulo.attachment_bytes)
+                # a.1 Boleto: prioriza o anexo classificado como boleto
+                if reader is not None:
+                    bol_bytes = anexos.get("boleto_bytes") or titulo.attachment_bytes
+                    if bol_bytes:
+                        boleto_anexo = reader.extrair_boleto(bol_bytes)
+            else:
+                titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
 
-        # b. Chave NF-e: da API (pula OCR) OU via OCR do anexo (fallback)
+        # b. Chave NF-e: da API (pula OCR) OU via OCR do anexo NF (fallback)
         if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None:
             titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
 

@@ -165,6 +165,98 @@ class SiengeClient:
             logger.error(f"Erro ao baixar anexo do título {titulo_id}: {str(e)}")
             return None
 
+    # Palavras-chave para classificar anexos por nome de arquivo
+    _KW_NF = ("danfe", "nfe", "nf-e", "nota", "fiscal", "nfse", "nf_", "_nf", "nf.")
+    _KW_BOLETO = ("boleto", "bol_", "_bol", "cobranca", "cobrança", "titulo", "título", "pix", "duplicata")
+
+    @classmethod
+    def _classificar_anexo(cls, nome: str) -> Optional[str]:
+        """Classifica um anexo como 'nf' ou 'boleto' pelo nome do arquivo."""
+        n = (nome or "").lower()
+        if any(k in n for k in cls._KW_BOLETO):
+            return "boleto"
+        if any(k in n for k in cls._KW_NF):
+            return "nf"
+        return None
+
+    def baixar_anexos_titulo(self, titulo_id: int, pasta_destino: str) -> dict:
+        """
+        Lista e baixa TODOS os anexos do título via API do Sienge, salva cada um em
+        `pasta_destino` e classifica priorizando NF e boleto.
+
+        GET /bill-debts/{id}/attachments           -> lista de anexos
+        GET /bill-debts/{id}/attachments/{aid}/download -> conteúdo do anexo
+
+        Retorna:
+          {
+            "nf_bytes", "nf_path",          # melhor candidato a NF/DANFE
+            "boleto_bytes", "boleto_path",  # melhor candidato a boleto
+            "anexos": [ {id, nome, path, tipo}, ... ]
+          }
+        TODO(API): confirmar o nome do campo do arquivo na listagem (name/fileName/
+        description) e a URL de download contra a API real.
+        """
+        import os
+        resultado = {"nf_bytes": None, "nf_path": None,
+                     "boleto_bytes": None, "boleto_path": None, "anexos": []}
+        if titulo_id is None:
+            return resultado
+
+        try:
+            resp = self._request_with_retry("GET", f"/bill-debts/{titulo_id}/attachments")
+            itens = resp.json().get("results", [])
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao listar anexos do título {titulo_id}: {e}")
+            return resultado
+
+        if not itens:
+            logger.warning(f"Título {titulo_id} não possui anexos na API.")
+            return resultado
+
+        os.makedirs(pasta_destino, exist_ok=True)
+        nf_fallback = None  # primeiro PDF, caso nada case por nome
+
+        for idx, item in enumerate(itens):
+            anexo_id = item.get("id")
+            nome = (item.get("name") or item.get("fileName")
+                    or item.get("description") or f"anexo_{idx+1}")
+            if anexo_id is None:
+                continue
+            try:
+                dl = self._request_with_retry(
+                    "GET", f"/bill-debts/{titulo_id}/attachments/{anexo_id}/download")
+                conteudo = dl.content
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Falha ao baixar anexo {anexo_id} do título {titulo_id}: {e}")
+                continue
+
+            nome_seguro = "".join(c for c in str(nome) if c.isalnum() or c in " ._-").strip() or f"anexo_{idx+1}"
+            if not os.path.splitext(nome_seguro)[1]:
+                nome_seguro += ".pdf"
+            caminho = os.path.join(pasta_destino, nome_seguro)
+            with open(caminho, "wb") as f:
+                f.write(conteudo)
+
+            tipo = self._classificar_anexo(nome_seguro)
+            resultado["anexos"].append({"id": anexo_id, "nome": nome_seguro, "path": caminho, "tipo": tipo})
+
+            if tipo == "nf" and resultado["nf_bytes"] is None:
+                resultado["nf_bytes"], resultado["nf_path"] = conteudo, caminho
+            elif tipo == "boleto" and resultado["boleto_bytes"] is None:
+                resultado["boleto_bytes"], resultado["boleto_path"] = conteudo, caminho
+            if nf_fallback is None and nome_seguro.lower().endswith(".pdf"):
+                nf_fallback = (conteudo, caminho)
+
+        # Se nada foi classificado como NF, usa o primeiro PDF como candidato
+        if resultado["nf_bytes"] is None and nf_fallback:
+            resultado["nf_bytes"], resultado["nf_path"] = nf_fallback
+
+        logger.success(
+            f"Anexos do título {titulo_id}: {len(resultado['anexos'])} salvos em {pasta_destino} "
+            f"(NF={'sim' if resultado['nf_path'] else 'nao'}, boleto={'sim' if resultado['boleto_path'] else 'nao'})"
+        )
+        return resultado
+
     # ==========================================================================
     # Resolução de Nota Fiscal de Compra a partir de um título do relatório
     # ==========================================================================
