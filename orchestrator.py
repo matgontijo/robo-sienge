@@ -81,7 +81,7 @@ def processar_titulo(
     boleto_anexo = None
     try:
         # 0. Título do relatório: resolver ID interno e tentar NF pela API do Sienge
-        if from_report:
+        if from_report and sienge_cli is not None:
             if titulo.id is None:
                 titulo.id = sienge_cli.resolver_titulo_por_numero(
                     titulo.numero, titulo.parcela, data_inicio, data_fim
@@ -91,20 +91,21 @@ def processar_titulo(
             if not titulo.fornecedor_cnpj and titulo.nf_cnpj_emitente:
                 titulo.fornecedor_cnpj = titulo.nf_cnpj_emitente
 
-        # a. Baixar anexo (somente se já temos o ID interno)
-        if titulo.id is not None:
+        # a. Baixar anexo (somente se já temos o ID interno e o Sienge disponível)
+        if titulo.id is not None and sienge_cli is not None:
             titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
 
         # a.1 Se houver boleto no anexo, extrair dados para cruzamento posterior
-        if from_report and titulo.attachment_bytes:
+        if from_report and titulo.attachment_bytes and reader is not None:
             boleto_anexo = reader.extrair_boleto(titulo.attachment_bytes)
 
         # b. Chave NF-e: da API (pula OCR) OU via OCR do anexo (fallback)
-        if not titulo.chave_nfe and titulo.attachment_bytes:
+        if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None:
             titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
 
-        if not titulo.chave_nfe:
-            # Sem chave: reconciliador apontará SEM_ANEXO/ILEGÍVEL; boleto ainda é cruzado
+        if not titulo.chave_nfe or sefaz_cli is None:
+            # Sem chave (ou Sefaz indisponível): reconciliador apontará SEM_ANEXO/ILEGÍVEL;
+            # boleto do anexo ainda é cruzado.
             return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": None}
 
         # c. Buscar XML na SEFAZ
@@ -155,12 +156,25 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
     erros_execucao = []
         
     try:
-        # Inicializar todos os clientes
-        sienge_cli = SiengeClient(config.SIENGE_BASE_URL, config.SIENGE_USERNAME, config.SIENGE_PASSWORD)
-        reader = AttachmentReader(config.ANTHROPIC_API_KEY)
-        sefaz_cli = SefazClient(config.SEFAZ_CERT_PATH, config.SEFAZ_CERT_PASSWORD, config.SEFAZ_CNPJ, config.SEFAZ_AMBIENTE)
+        # Inicializar os clientes — cada um de forma resiliente: se um serviço não
+        # estiver configurado (ex.: certificado ausente), o pipeline degrada e segue
+        # com os demais, em vez de abortar o ciclo inteiro.
+        def _init_cliente(nome, fabrica):
+            try:
+                return fabrica()
+            except Exception as e:  # noqa: BLE001
+                log("WARNING", nome, f"{nome} indisponível (seguindo sem ele): {e}")
+                return None
+
+        sienge_cli = _init_cliente("sienge", lambda: SiengeClient(
+            config.SIENGE_BASE_URL, config.SIENGE_USERNAME, config.SIENGE_PASSWORD))
+        reader = _init_cliente("ocr", lambda: AttachmentReader(config.ANTHROPIC_API_KEY))
+        sefaz_cli = _init_cliente("sefaz", lambda: SefazClient(
+            config.SEFAZ_CERT_PATH, config.SEFAZ_CERT_PASSWORD, config.SEFAZ_CNPJ, config.SEFAZ_AMBIENTE))
         danfe_gen = DanfeGenerator()
-        santander_cli = SantanderClient(config.SANTANDER_CLIENT_ID, config.SANTANDER_CLIENT_SECRET, config.SANTANDER_CERT_PATH, config.SANTANDER_CERT_PASSWORD, config.SANTANDER_ENV)
+        santander_cli = _init_cliente("santander", lambda: SantanderClient(
+            config.SANTANDER_CLIENT_ID, config.SANTANDER_CLIENT_SECRET, config.SANTANDER_CERT_PATH,
+            config.SANTANDER_CERT_PASSWORD, config.SANTANDER_ENV))
         reconciler = Reconciler()
         report_gen = ReportGenerator()
         
@@ -208,16 +222,20 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             db.atualizar_execucao(exec_id, status="ABORTADO", concluido_em=datetime.datetime.now())
             return exec_id
             
-        # Buscar boletos DDA
-        try:
-            data_fim_dda = data_fim + timedelta(days=7)
-            boletos_dda = santander_cli.consultar_dda(data_inicio, data_fim_dda)
-            log("INFO", "santander", f"Total de boletos encontrados DDA: {len(boletos_dda)}")
-        except Exception as e:
-            msg = f"Falha crítica ao consultar DDA Santander: {e}"
-            log("ERROR", "santander", msg)
-            erros_execucao.append(msg)
-            boletos_dda = [] 
+        # Buscar boletos DDA (se o Santander estiver configurado)
+        boletos_dda = []
+        if santander_cli is None:
+            log("WARNING", "santander", "Santander não configurado; conciliação DDA será pulada.")
+        else:
+            try:
+                data_fim_dda = data_fim + timedelta(days=7)
+                boletos_dda = santander_cli.consultar_dda(data_inicio, data_fim_dda)
+                log("INFO", "santander", f"Total de boletos encontrados DDA: {len(boletos_dda)}")
+            except Exception as e:
+                msg = f"Falha crítica ao consultar DDA Santander: {e}"
+                log("ERROR", "santander", msg)
+                erros_execucao.append(msg)
+                boletos_dda = []
 
         # Motor de Cruzamento (Reconciliação)
         divergencias_finais = []
