@@ -81,28 +81,31 @@ Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def seed_admin_user():
+    """Garante um usuário ADMIN inicial usando as credenciais do config/.env
+    (DASHBOARD_USER / DASHBOARD_PASSWORD). Assim o login do painel é configurável
+    e fica consistente entre app e testes."""
     db = SessionLocal()
     try:
-        admin = db.query(Usuario).filter(Usuario.username == "admin").first()
+        admin_user = config.DASHBOARD_USER or "admin"
+        admin_pass = config.DASHBOARD_PASSWORD or "admin"
+
+        admin = db.query(Usuario).filter(Usuario.username == admin_user).first()
         if not admin:
-            hashed_password = pwd_context.hash("trk123")
-            novo_admin = Usuario(
-                username="admin",
-                password_hash=hashed_password,
+            db.add(Usuario(
+                username=admin_user,
+                password_hash=pwd_context.hash(admin_pass),
                 role="ADMIN"
-            )
-            db.add(novo_admin)
-            
+            ))
+
+        # Usuário secundário histórico (mantido para compatibilidade)
         rafael = db.query(Usuario).filter(Usuario.username == "Rafael").first()
         if not rafael:
-            hashed_password = pwd_context.hash("trk123")
-            novo_rafael = Usuario(
+            db.add(Usuario(
                 username="Rafael",
-                password_hash=hashed_password,
+                password_hash=pwd_context.hash(admin_pass),
                 role="ADMIN"
-            )
-            db.add(novo_rafael)
-            
+            ))
+
         db.commit()
     finally:
         db.close()

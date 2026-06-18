@@ -70,8 +70,7 @@ async function initDashboard() {
                 if(confTabs.length > 1) confTabs[1].style.display = 'none';
             }
             if (userRole === 'LEITURA') {
-                const rodarBtn = document.querySelector('.header .btn-primary');
-                if(rodarBtn) rodarBtn.style.display = 'none';
+                document.querySelectorAll('.header-actions button').forEach(b => b.style.display = 'none');
             }
         }
     } catch(e) { console.error(e); }
@@ -369,6 +368,50 @@ async function rodarAgora() {
                 await fetchHistorico();
             }, 1000);
         }
+    }
+}
+
+async function rodarComRelatorio(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    const di = prompt("Janela DDA - Data Início (YYYY-MM-DD)\n(usada só p/ buscar boletos; os títulos vêm do relatório)", new Date().toISOString().substring(0,10));
+    if (di === null) { input.value = ""; return; }
+    const df = prompt("Janela DDA - Data Fim (YYYY-MM-DD)", di) || di;
+
+    const fd = new FormData();
+    fd.append("arquivo", file);
+    fd.append("data_inicio", di);
+    fd.append("data_fim", df);
+
+    const btn = document.getElementById("btn-relatorio");
+    const txtOriginal = btn.innerText;
+    btn.innerText = "Enviando " + file.name + "...";
+    btn.disabled = true;
+
+    try {
+        const r = await fetch("/api/execucoes/iniciar-relatorio", {
+            method: "POST",
+            headers: { "Authorization": "Basic " + token }, // sem Content-Type: o browser põe o boundary
+            body: fd
+        });
+
+        if (r.status === 409) { alert("Já existe uma execução rodando."); return; }
+        if (!r.ok) {
+            const e = await r.json().catch(() => ({}));
+            alert("Erro ao iniciar: " + (e.detail || r.status));
+            return;
+        }
+        const data = await r.json();
+        await fetchStats();
+        await fetchHistorico();
+        if (data.execucao_id > 0) selectExecucao(data.execucao_id);
+    } catch (e) {
+        alert("Erro de conexão: " + e);
+    } finally {
+        btn.innerText = txtOriginal;
+        btn.disabled = false;
+        input.value = ""; // permite reenviar o mesmo arquivo
     }
 }
 

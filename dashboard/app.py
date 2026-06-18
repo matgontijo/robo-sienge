@@ -3,7 +3,7 @@ import asyncio
 import threading
 from datetime import date
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Response, Request
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Response, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -148,6 +148,51 @@ def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_cur
     time.sleep(0.5)
     
     # Pega a ultima (que deve ser a nossa)
+    ultima = db.get_execucoes(limit=1)
+    if ultima and ultima[0].status == "RODANDO":
+        return {"execucao_id": ultima[0].id}
+    return {"execucao_id": 0}
+
+@app.post("/api/execucoes/iniciar-relatorio", dependencies=[Depends(get_current_user)])
+def iniciar_execucao_relatorio(
+    arquivo: UploadFile = File(...),
+    data_inicio: str = Form(None),
+    data_fim: str = Form(None),
+    current_user: db.Usuario = Depends(get_current_user),
+):
+    """Inicia uma execução usando um relatório de Fluxo de Caixa enviado por upload."""
+    if current_user.role == "LEITURA":
+        raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
+
+    ext = os.path.splitext(arquivo.filename or "")[1].lower()
+    if ext not in (".xlsx", ".xlsm", ".pdf"):
+        raise HTTPException(status_code=400, detail="Arquivo inválido. Envie um .xlsx ou .pdf")
+
+    # Já existe execução rodando?
+    for e in db.get_execucoes(limit=10):
+        if e.status == "RODANDO":
+            raise HTTPException(status_code=409, detail="Já existe uma execução em andamento")
+
+    # Salva o relatório enviado
+    import time as _time
+    upload_dir = os.path.join(config.OUTPUT_DIR, "relatorios_input")
+    os.makedirs(upload_dir, exist_ok=True)
+    safe_name = f"{_time.strftime('%Y%m%d_%H%M%S')}{ext}"
+    dest = os.path.join(upload_dir, safe_name)
+    with open(dest, "wb") as f:
+        f.write(arquivo.file.read())
+
+    # Datas: usadas apenas para a janela DDA; default hoje
+    d_inicio = date.fromisoformat(data_inicio) if data_inicio else date.today()
+    d_fim = date.fromisoformat(data_fim) if data_fim else d_inicio
+
+    def rotina_em_background():
+        orchestrator.executar_ciclo(d_inicio, d_fim, iniciado_por="dashboard-relatorio", relatorio_path=dest)
+
+    threading.Thread(target=rotina_em_background).start()
+
+    import time
+    time.sleep(0.5)
     ultima = db.get_execucoes(limit=1)
     if ultima and ultima[0].status == "RODANDO":
         return {"execucao_id": ultima[0].id}

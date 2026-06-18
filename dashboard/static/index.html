@@ -91,7 +91,11 @@
                     <button class="tab-btn" onclick="switchMainTab('presentation')">Apresentação Executiva</button>
                 </div>
             </div>
-            <button class="btn-primary" onclick="rodarAgora()">▶ Rodar Agora</button>
+            <div class="header-actions">
+                <input type="file" id="file-relatorio" accept=".xlsx,.xlsm,.pdf" style="display:none" onchange="rodarComRelatorio(this)">
+                <button class="btn-secondary" id="btn-relatorio" onclick="document.getElementById('file-relatorio').click()">📄 Rodar com Relatório</button>
+                <button class="btn-primary" onclick="rodarAgora()">▶ Rodar (API por data)</button>
+            </div>
         </div>
 
         <div id="view-dashboard">
