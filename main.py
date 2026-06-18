@@ -20,6 +20,55 @@ def _validar_relatorio(caminho):
     return caminho
 
 
+def _rodar_diagnostico(numero_titulo=None):
+    """Testa autenticação e autorização de cada recurso do Sienge usado pelo robô."""
+    from modules.sienge_client import SiengeClient
+    from datetime import date, timedelta
+
+    cli = SiengeClient(config.SIENGE_BASE_URL, config.SIENGE_USERNAME, config.SIENGE_PASSWORD)
+    hoje = date.today()
+    ini = (hoje - timedelta(days=30)).strftime("%Y-%m-%d")
+    fim = (hoje + timedelta(days=60)).strftime("%Y-%m-%d")
+
+    recursos = [
+        ("Portadores (auth)",        "/bearers", {"limit": 1}),
+        ("Títulos Contas a Pagar",   "/bill-debts", {"startDueDate": ini, "endDueDate": fim, "limit": 1}),
+        ("Credores",                 "/creditors", {"limit": 1}),
+        ("Notas Fiscais de Compra",  "/purchase-invoices", {"limit": 1}),
+        ("Notas Fiscais Bulk Data",  "/bulk-data/v1/invoice-itens", {"limit": 1}),
+    ]
+
+    print("\n" + "=" * 68)
+    print(f"DIAGNÓSTICO SIENGE  |  user={config.SIENGE_USERNAME}  base={config.SIENGE_BASE_URL}")
+    print("=" * 68)
+    print(f"{'Recurso':28} {'Status':8} {'Resultado'}")
+    print("-" * 68)
+    for nome, ep, params in recursos:
+        r = cli.probe(ep, params)
+        s = r["status"]
+        veredito = ("OK - liberado" if s == 200 else
+                    "SEM AUTORIZACAO (403)" if s == 403 else
+                    "NAO LIBERADO (404)" if s == 404 else
+                    "AUTH FALHOU (401)" if s == 401 else f"({s})")
+        print(f"{nome:28} {str(s):8} {veredito}")
+    print("-" * 68)
+
+    if numero_titulo:
+        print(f"\nTeste de resolução do título {numero_titulo} + anexos:")
+        try:
+            tid = cli.resolver_titulo_por_numero(
+                numero_titulo, None, hoje - timedelta(days=60), hoje + timedelta(days=60))
+            print(f"  ID interno resolvido: {tid}")
+            if tid:
+                import os
+                anexos = cli.baixar_anexos_titulo(tid, os.path.join(config.OUTPUT_DIR, "anexos", f"diag_{numero_titulo}"))
+                print(f"  Anexos: {len(anexos['anexos'])} | NF={'sim' if anexos['nf_path'] else 'nao'} | boleto={'sim' if anexos['boleto_path'] else 'nao'}")
+        except Exception as e:
+            print(f"  Erro: {e}")
+    print("\nLegenda: 200=liberado · 403=falta autorizar o recurso · 401=login/senha · 404=recurso nao habilitado")
+    print("Quando os 4 recursos do robo estiverem 200, a conciliacao completa funciona.\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Robô de Conciliação Contas a Pagar")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -45,6 +94,11 @@ def main():
     full_parser.add_argument("--relatorio", type=str, help="Caminho do relatorio de Fluxo de Caixa (.xlsx ou .pdf) usado nas execucoes agendadas.")
     full_parser.add_argument("--debug", action="store_true", help="Ativa logs nvel DEBUG")
     
+    # diagnostico
+    diag_parser = subparsers.add_parser("diagnostico", help="Testa as conexoes/autorizacoes com a API do Sienge")
+    diag_parser.add_argument("--titulo", type=str, help="Numero de um titulo para testar resolucao + anexos (ex.: 8674)")
+    diag_parser.add_argument("--debug", action="store_true", help="Ativa logs nivel DEBUG")
+
     # add-user
     add_user_parser = subparsers.add_parser("add-user", help="Adiciona um novo usuario ao banco de dados")
     add_user_parser.add_argument("username", type=str, help="Nome de usuario")
@@ -89,6 +143,9 @@ def main():
 
         orchestrator.executar_ciclo(d_inicio, d_fim, iniciado_por="cli", relatorio_path=relatorio_path)
         
+    elif args.command == "diagnostico":
+        _rodar_diagnostico(getattr(args, "titulo", None))
+
     elif args.command == "schedule":
         orchestrator.agendar()
     elif args.command == "dashboard":
