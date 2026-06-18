@@ -43,7 +43,8 @@ class Reconciler:
         self,
         titulo: Titulo,
         nfe_data: Optional[NFeData],
-        boletos: List[Boleto]
+        boletos: List[Boleto],
+        boleto_anexo: Optional[Boleto] = None
     ) -> List[Divergencia]:
         divergencias = []
         
@@ -162,5 +163,66 @@ class Reconciler:
                         criticidade="ATENCAO",
                         danfe_path=titulo.danfe_path
                     ))
-                    
+
+        # CRUZAMENTO DO BOLETO ENCONTRADO NO ANEXO DO TÍTULO
+        # (independe do DDA; valida valor, vencimento e CNPJ do beneficiário)
+        if boleto_anexo is not None:
+            divergencias.extend(self._reconciliar_boleto_anexo(titulo, nfe_data, boleto_anexo))
+
         return divergencias
+
+    def _reconciliar_boleto_anexo(
+        self,
+        titulo: Titulo,
+        nfe_data: Optional[NFeData],
+        boleto: Boleto
+    ) -> List[Divergencia]:
+        divs: List[Divergencia] = []
+
+        # VALOR: boleto x título (e x NF quando houver)
+        if boleto.valor and abs(boleto.valor - titulo.valor_liquido) > 0.05:
+            divs.append(Divergencia(
+                titulo_id=titulo.id,
+                titulo_numero=titulo.numero,
+                tipo="BOLETO_VALOR_DIVERGENTE",
+                campo="Valor (Boleto x Título)",
+                valor_sienge=f"{titulo.valor_liquido:.2f}",
+                valor_nfe=f"{nfe_data.valor_liquido:.2f}" if nfe_data else "-",
+                valor_boleto=f"{boleto.valor:.2f}",
+                criticidade="CRITICA",
+                danfe_path=titulo.danfe_path,
+            ))
+
+        # VENCIMENTO: boleto x título (tolerância de 1 dia)
+        if boleto.data_vencimento and titulo.data_vencimento:
+            if abs((boleto.data_vencimento - titulo.data_vencimento).days) > 1:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id,
+                    titulo_numero=titulo.numero,
+                    tipo="BOLETO_VENCIMENTO_DIVERGENTE",
+                    campo="Vencimento (Boleto x Título)",
+                    valor_sienge=str(titulo.data_vencimento),
+                    valor_nfe="-",
+                    valor_boleto=str(boleto.data_vencimento),
+                    criticidade="ATENCAO",
+                    danfe_path=titulo.danfe_path,
+                ))
+
+        # CNPJ do beneficiário do boleto x CNPJ do fornecedor (título/NF)
+        cnpj_boleto = self._limpar_cnpj(boleto.cnpj_beneficiario)
+        cnpj_ref = self._limpar_cnpj(titulo.fornecedor_cnpj) or (
+            self._limpar_cnpj(nfe_data.cnpj_emitente) if nfe_data else "")
+        if cnpj_boleto and cnpj_ref and cnpj_boleto != cnpj_ref:
+            divs.append(Divergencia(
+                titulo_id=titulo.id,
+                titulo_numero=titulo.numero,
+                tipo="BOLETO_CNPJ_DIVERGENTE",
+                campo="CNPJ Beneficiário (Boleto)",
+                valor_sienge=cnpj_ref,
+                valor_nfe=self._limpar_cnpj(nfe_data.cnpj_emitente) if nfe_data else "-",
+                valor_boleto=cnpj_boleto,
+                criticidade="CRITICA",
+                danfe_path=titulo.danfe_path,
+            ))
+
+        return divs
