@@ -357,14 +357,15 @@ class ReportParser:
         re_data = re.compile(r"^\s*(\d{2}/\d{2}/\d{4})\b")
         re_num = re.compile(r"-?[\d.]+,\d{2}")
 
-        # Reagrupar: juntar linhas de continuação (sem data) à linha anterior
+        # Reagrupar: juntar linhas de continuação (sem data) à linha anterior.
+        # Linhas de total/cabeçalho/"Disponível em" nunca são tratadas como continuação.
         logicas: List[str] = []
         for l in linhas:
             if not l.strip():
                 continue
             if re_data.match(l):
                 logicas.append(l)
-            elif logicas:
+            elif logicas and not self._is_total_ou_cabecalho([l]):
                 logicas[-1] += " " + l.strip()
 
         titulos: List[Titulo] = []
