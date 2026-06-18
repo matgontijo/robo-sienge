@@ -86,11 +86,18 @@ class ReportParser:
         return -v if negativo else v
 
     @staticmethod
+    def _limpar_texto(valor: object) -> str:
+        """Colapsa quebras de linha e espaços repetidos (células quebradas no PDF)."""
+        if valor is None:
+            return ""
+        return " ".join(str(valor).split())
+
+    @staticmethod
     def _split_documento(documento: object) -> Tuple[Optional[str], Optional[str]]:
         """'NFE.175118' -> ('NFE', '175118'); 'CT.CT R205' -> ('CT', 'CT R205')."""
         if documento is None:
             return None, None
-        s = str(documento).strip()
+        s = " ".join(str(documento).split())
         if not s:
             return None, None
         if "." in s:
@@ -103,7 +110,7 @@ class ReportParser:
         """'8674/3' -> ('8674', '3'); '8674' -> ('8674', None)."""
         if tit_parc is None:
             return None, None
-        s = str(tit_parc).strip()
+        s = " ".join(str(tit_parc).split())
         if not s:
             return None, None
         if "/" in s:
@@ -161,14 +168,14 @@ class ReportParser:
         return Titulo(
             id=None,  # vínculo real (ID interno Sienge) é resolvido na etapa de orquestração
             numero=numero_titulo or (str(num_doc) if num_doc else ""),
-            fornecedor_nome=(str(fornecedor).strip() if fornecedor else ""),
+            fornecedor_nome=self._limpar_texto(fornecedor),
             fornecedor_cnpj="",  # não consta no relatório; vem da NF/Sefaz/API
             valor_nominal=saidas,
             valor_liquido=saidas,
             data_vencimento=data_linha,
             forma_pagamento="",
             status="",
-            documento=(str(documento).strip() if documento else None),
+            documento=(self._limpar_texto(documento) or None),
             tipo_documento=tipo_doc,
             numero_documento=num_doc,
             parcela=parcela,
