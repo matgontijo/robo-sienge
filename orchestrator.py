@@ -8,6 +8,7 @@ from lxml import etree
 import config
 from models import Titulo, NFeData, Boleto
 from modules.sienge_client import SiengeClient
+from modules.report_parser import ReportParser
 from modules.attachment_reader import AttachmentReader
 from modules.sefaz_client import SefazClient
 from modules.danfe_generator import DanfeGenerator
@@ -57,53 +58,79 @@ def _parse_xml_to_nfedata(xml_str: str) -> NFeData:
     )
 
 def processar_titulo(
-    titulo: Titulo, 
-    sienge_cli: SiengeClient, 
-    reader: AttachmentReader, 
-    sefaz_cli: SefazClient, 
-    danfe_gen: DanfeGenerator
+    titulo: Titulo,
+    sienge_cli: SiengeClient,
+    reader: AttachmentReader,
+    sefaz_cli: SefazClient,
+    danfe_gen: DanfeGenerator,
+    from_report: bool = False,
+    data_inicio: date = None,
+    data_fim: date = None
 ) -> dict:
     """
     Pipeline individual para cada título rodando em thread separada.
-    Retorna dicionrio com { 'titulo': Titulo, 'nfe': NFeData ou None, 'erro': msg de erro ou None }
+    Retorna dicionrio com { 'titulo': Titulo, 'nfe': NFeData ou None,
+    'boleto_anexo': Boleto ou None, 'erro': msg de erro ou None }
+
+    Quando `from_report=True` (título veio do relatório de Fluxo de Caixa):
+      - resolve o ID interno do título no Sienge (para baixar anexos);
+      - tenta obter a NF pela API do Sienge — se vier a chave de acesso, PULA o OCR;
+      - quando há boleto no anexo, extrai seus dados para cruzamento.
     """
-    logger.info(f"Processando Título {titulo.numero} (ID: {titulo.id})")
+    logger.info(f"Processando Título {titulo.numero} (ID: {titulo.id}, from_report={from_report})")
+    boleto_anexo = None
     try:
-        # a. Baixar anexo
-        titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
-        if not titulo.attachment_bytes:
-            return {"titulo": titulo, "nfe": None, "erro": None} # Sem erro fatal, apenas no tem anexo
-            
-        # b. Extrair chave NF-e
-        titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
+        # 0. Título do relatório: resolver ID interno e tentar NF pela API do Sienge
+        if from_report:
+            if titulo.id is None:
+                titulo.id = sienge_cli.resolver_titulo_por_numero(
+                    titulo.numero, titulo.parcela, data_inicio, data_fim
+                )
+            sienge_cli.resolver_nota_fiscal(titulo)
+            # Usa o CNPJ da NF (API) como referência do fornecedor p/ o cruzamento
+            if not titulo.fornecedor_cnpj and titulo.nf_cnpj_emitente:
+                titulo.fornecedor_cnpj = titulo.nf_cnpj_emitente
+
+        # a. Baixar anexo (somente se já temos o ID interno)
+        if titulo.id is not None:
+            titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
+
+        # a.1 Se houver boleto no anexo, extrair dados para cruzamento posterior
+        if from_report and titulo.attachment_bytes:
+            boleto_anexo = reader.extrair_boleto(titulo.attachment_bytes)
+
+        # b. Chave NF-e: da API (pula OCR) OU via OCR do anexo (fallback)
+        if not titulo.chave_nfe and titulo.attachment_bytes:
+            titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
+
         if not titulo.chave_nfe:
-            return {"titulo": titulo, "nfe": None, "erro": None} # Ilegvel, reconciliador pegar
-            
+            # Sem chave: reconciliador apontará SEM_ANEXO/ILEGÍVEL; boleto ainda é cruzado
+            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": None}
+
         # c. Buscar XML na SEFAZ
         xml_str = sefaz_cli.buscar_xml_por_chave(titulo.chave_nfe)
         if not xml_str:
-            # Reconciliador tambm apontar falta ou SEFAZ falhou (logado)
-            return {"titulo": titulo, "nfe": None, "erro": None}
-            
+            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": None}
+
         titulo.nfe_xml = xml_str
         nfe_data = _parse_xml_to_nfedata(xml_str)
-        
+
         # d. Gerar DANFE
         import os
         danfe_path = os.path.join(config.OUTPUT_DIR, "danfes", f"{titulo.chave_nfe}.pdf")
         if not os.path.exists(danfe_path):
             danfe_path = danfe_gen.gerar_pdf(xml_str, danfe_path)
-            
+
         titulo.danfe_path = danfe_path
         nfe_data.danfe_path = danfe_path
-        
-        return {"titulo": titulo, "nfe": nfe_data, "erro": None}
-        
+
+        return {"titulo": titulo, "nfe": nfe_data, "boleto_anexo": boleto_anexo, "erro": None}
+
     except Exception as e:
         logger.error(f"Erro inesperado no processamento do título {titulo.id}: {e}")
-        return {"titulo": titulo, "nfe": None, "erro": str(e)}
+        return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": str(e)}
 
-def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por: str = "scheduler") -> int:
+def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por: str = "scheduler", relatorio_path: str = None) -> int:
     start_time = time.time()
     
     if not data_inicio:
@@ -144,15 +171,24 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                 config.NOTIF_EMAIL_DESTINO, config.TEAMS_WEBHOOK_URL
             )
             
-        # Buscar títulos do Sienge
-        titulos = sienge_cli.listar_titulos(data_inicio, data_fim)
-        log("INFO", "sienge", f"Total de títulos encontrados: {len(titulos)}")
-        
+        # Fonte dos títulos: relatório de Fluxo de Caixa (se informado) ou API do Sienge
+        from_report = bool(relatorio_path)
+        if from_report:
+            log("INFO", "report", f"Lendo títulos do relatório de Fluxo de Caixa: {relatorio_path}")
+            titulos = ReportParser().parse(relatorio_path)
+            log("INFO", "report", f"Títulos conferíveis no relatório: {len(titulos)}")
+        else:
+            titulos = sienge_cli.listar_titulos(data_inicio, data_fim)
+            log("INFO", "sienge", f"Total de títulos encontrados: {len(titulos)}")
+
         # Processar títulos em paralelo (Max 5 workers)
         resultados_processamento = []
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_titulo = {
-                executor.submit(processar_titulo, t, sienge_cli, reader, sefaz_cli, danfe_gen): t for t in titulos
+                executor.submit(
+                    processar_titulo, t, sienge_cli, reader, sefaz_cli, danfe_gen,
+                    from_report, data_inicio, data_fim
+                ): t for t in titulos
             }
             
             for future in as_completed(future_to_titulo):
@@ -194,12 +230,13 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             t = r["titulo"]
             erro = r["erro"]
             nfe = r["nfe"]
-            
+            boleto_anexo = r.get("boleto_anexo")
+
             if erro:
                 titulos_erro.append((t, erro))
                 continue
-                
-            divs = reconciler.reconciliar(t, nfe, boletos_dda)
+
+            divs = reconciler.reconciliar(t, nfe, boletos_dda, boleto_anexo)
             if not divs:
                 titulos_ok.append(t)
             else:
@@ -290,16 +327,17 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
         )
         return exec_id
 
-def agendar() -> None:
+def agendar(relatorio_path: str = None) -> None:
     logger.info(f"Agendando execuo diária s {config.CRON_HORA}:{config.CRON_MINUTO}...")
     scheduler = BlockingScheduler()
-    
+
     # Agendamento dirio usando hour e minute do .env
     scheduler.add_job(
-        executar_ciclo, 
-        'cron', 
-        hour=int(config.CRON_HORA), 
-        minute=int(config.CRON_MINUTO)
+        executar_ciclo,
+        'cron',
+        hour=int(config.CRON_HORA),
+        minute=int(config.CRON_MINUTO),
+        kwargs={"relatorio_path": relatorio_path}
     )
     
     try:
