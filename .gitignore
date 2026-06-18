@@ -10,3 +10,5 @@ certs/
 .idea/
 .pytest_cache/
 *.log
+.venv/
+.claude/
