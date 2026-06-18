@@ -79,6 +79,8 @@ def processar_titulo(
     """
     logger.info(f"Processando Título {titulo.numero} (ID: {titulo.id}, from_report={from_report})")
     boleto_anexo = None
+    info_pagamento = None
+    retencoes = {}
     try:
         # 0. Título do relatório: resolver ID interno e tentar NF pela API do Sienge
         if from_report and sienge_cli is not None:
@@ -111,6 +113,13 @@ def processar_titulo(
             else:
                 titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
 
+        # a.2 Dados de pagamento (anti-fraude) e retenções do título — fluxo do relatório
+        if from_report and titulo.id is not None and sienge_cli is not None:
+            info_pagamento = sienge_cli.consultar_informacoes_pagamento(titulo.id, titulo.parcela)
+            if info_pagamento and info_pagamento.forma_pagamento and not titulo.forma_pagamento:
+                titulo.forma_pagamento = info_pagamento.forma_pagamento
+            retencoes = sienge_cli.consultar_impostos_titulo(titulo.id) or {}
+
         # b. Chave NF-e: da API (pula OCR) OU via OCR do anexo NF (fallback)
         if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None:
             titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
@@ -118,12 +127,14 @@ def processar_titulo(
         if not titulo.chave_nfe or sefaz_cli is None:
             # Sem chave (ou Sefaz indisponível): reconciliador apontará SEM_ANEXO/ILEGÍVEL;
             # boleto do anexo ainda é cruzado.
-            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": None}
+            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
+                    "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": None}
 
         # c. Buscar XML na SEFAZ
         xml_str = sefaz_cli.buscar_xml_por_chave(titulo.chave_nfe)
         if not xml_str:
-            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": None}
+            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
+                    "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": None}
 
         titulo.nfe_xml = xml_str
         nfe_data = _parse_xml_to_nfedata(xml_str)
@@ -137,11 +148,13 @@ def processar_titulo(
         titulo.danfe_path = danfe_path
         nfe_data.danfe_path = danfe_path
 
-        return {"titulo": titulo, "nfe": nfe_data, "boleto_anexo": boleto_anexo, "erro": None}
+        return {"titulo": titulo, "nfe": nfe_data, "boleto_anexo": boleto_anexo,
+                "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": None}
 
     except Exception as e:
         logger.error(f"Erro inesperado no processamento do título {titulo.id}: {e}")
-        return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo, "erro": str(e)}
+        return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
+                "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": str(e)}
 
 def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por: str = "scheduler", relatorio_path: str = None) -> int:
     start_time = time.time()
@@ -261,12 +274,17 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             erro = r["erro"]
             nfe = r["nfe"]
             boleto_anexo = r.get("boleto_anexo")
+            info_pagamento = r.get("info_pagamento")
+            retencoes = r.get("retencoes") or {}
 
             if erro:
                 titulos_erro.append((t, erro))
                 continue
 
-            divs = reconciler.reconciliar(t, nfe, boletos_dda, boleto_anexo)
+            divs = reconciler.reconciliar(
+                t, nfe, boletos_dda, boleto_anexo,
+                info_pagamento=info_pagamento, retencoes=retencoes,
+            )
             if not divs:
                 titulos_ok.append(t)
             else:

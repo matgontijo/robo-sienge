@@ -25,6 +25,19 @@ class SiengeClient:
             "Content-Type": "application/json"
         })
 
+    def probe(self, endpoint: str, params: dict = None) -> dict:
+        """Faz um GET simples (sem retry/raise) e devolve status/tipo/resumo —
+        usado pelo diagnóstico de conexões. Não levanta exceção."""
+        url = f"{self.base_url}{endpoint}"
+        try:
+            r = self.session.get(url, params=params or {}, timeout=self.timeout)
+            ct = r.headers.get("content-type", "")
+            kind = "JSON" if "json" in ct else "HTML/outro"
+            return {"endpoint": endpoint, "status": r.status_code, "tipo": kind,
+                    "resumo": r.text[:120].replace("\n", " ").strip()}
+        except Exception as e:  # noqa: BLE001
+            return {"endpoint": endpoint, "status": 0, "tipo": "ERRO", "resumo": str(e)[:120]}
+
     def _request_with_retry(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         url = f"{self.base_url}{endpoint}"
         retries = 3
@@ -439,3 +452,158 @@ class SiengeClient:
 
         logger.warning(f"Não foi possível resolver o ID interno do título {numero}/{parcela}.")
         return None
+
+    # ==========================================================================
+    # Informações de pagamento do título (aba "Inf. Pagamento") — anti-fraude
+    # ==========================================================================
+    #
+    # Endpoints prováveis (a confirmar ao vivo quando o recurso for autorizado):
+    #   GET /bill-debts/{id}/payment-information   (detalhe de pagamento por parcela)
+    #   ou os campos vêm embutidos em GET /bill-debts/{id}
+    # TODO(API): confirmar endpoint e nomes de campo (banco/conta/beneficiário/PIX).
+
+    _PG_FORMA_KEYS = ("paymentMethod", "paymentType", "formaPagamento", "paymentTypeName")
+    _PG_BANCO_KEYS = ("bank", "bankNumber", "bankCode", "banco")
+    _PG_AGENCIA_KEYS = ("agency", "agencyNumber", "agencia")
+    _PG_CONTA_KEYS = ("account", "accountNumber", "conta")
+    _PG_TITULAR_CNPJ_KEYS = ("holderCpfCnpj", "accountHolderCnpj", "beneficiaryCpfCnpj", "titularCnpj")
+    _PG_TITULAR_NOME_KEYS = ("holderName", "accountHolderName", "titularNome")
+    _PG_PIX_KEY_KEYS = ("pixKey", "pixKeyValue", "chavePix")
+    _PG_PIX_TIPO_KEYS = ("pixKeyType", "pixType", "tipoChavePix")
+    _PG_BENEF_CNPJ_KEYS = ("beneficiaryCpfCnpj", "payeeCpfCnpj", "beneficiarioCnpj")
+    _PG_BENEF_NOME_KEYS = ("beneficiaryName", "payeeName", "beneficiarioNome")
+    _PG_LINHA_KEYS = ("digitableLine", "barCode", "linhaDigitavel", "typeableLine")
+
+    def consultar_informacoes_pagamento(self, titulo_id: int, parcela: str = None):
+        """
+        Lê os dados de pagamento cadastrados no título (forma, banco/conta, PIX,
+        beneficiário) para confronto anti-fraude. Retorna um InfoPagamento ou None.
+        """
+        from models import InfoPagamento
+        if titulo_id is None:
+            return None
+
+        item = None
+        # Tentativa A: sub-recurso de pagamento
+        for endpoint in (f"/bill-debts/{titulo_id}/payment-information",
+                         f"/bill-debts/{titulo_id}/payments"):
+            try:
+                resp = self._request_with_retry("GET", endpoint)
+                data = resp.json()
+                results = data.get("results", data if isinstance(data, list) else [data])
+                if results:
+                    item = results[0]
+                    break
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"payment-information via {endpoint} indisponível: {e}")
+
+        # Tentativa B: campos embutidos no próprio título
+        if item is None:
+            try:
+                resp = self._request_with_retry("GET", f"/bill-debts/{titulo_id}")
+                item = resp.json()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Não foi possível ler info de pagamento do título {titulo_id}: {e}")
+                return None
+
+        g = self._primeiro_campo
+        info = InfoPagamento(
+            forma_pagamento=str(g(item, self._PG_FORMA_KEYS) or ""),
+            parcela=parcela,
+            banco=self._txt(g(item, self._PG_BANCO_KEYS)),
+            agencia=self._txt(g(item, self._PG_AGENCIA_KEYS)),
+            conta=self._txt(g(item, self._PG_CONTA_KEYS)),
+            titular_nome=self._txt(g(item, self._PG_TITULAR_NOME_KEYS)),
+            titular_cnpj=self._so_digitos(g(item, self._PG_TITULAR_CNPJ_KEYS)),
+            chave_pix=self._txt(g(item, self._PG_PIX_KEY_KEYS)),
+            tipo_chave_pix=self._txt(g(item, self._PG_PIX_TIPO_KEYS)),
+            beneficiario_nome=self._txt(g(item, self._PG_BENEF_NOME_KEYS)),
+            beneficiario_cnpj=self._so_digitos(g(item, self._PG_BENEF_CNPJ_KEYS)),
+            linha_digitavel=self._txt(g(item, self._PG_LINHA_KEYS)),
+        )
+        logger.info(
+            f"Inf. pagamento título {titulo_id}: forma={info.forma_pagamento!r} "
+            f"cnpj_destino={info.cnpj_destino()}"
+        )
+        return info
+
+    def consultar_credor(self, credor_id: int = None, cnpj: str = None):
+        """
+        GET /creditors — dados do fornecedor (CNPJ, nome). Referência independente
+        para a conferência anti-fraude. Retorna o item JSON bruto ou None.
+        TODO(API): confirmar filtro por CNPJ e nome dos campos.
+        """
+        try:
+            if credor_id is not None:
+                resp = self._request_with_retry("GET", f"/creditors/{credor_id}")
+                return resp.json()
+            if cnpj:
+                resp = self._request_with_retry("GET", "/creditors",
+                                                params={"cnpj": self._so_digitos(cnpj), "limit": 1})
+                results = resp.json().get("results", [])
+                return results[0] if results else None
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao consultar credor (id={credor_id}, cnpj={cnpj}): {e}")
+        return None
+
+    def consultar_impostos_titulo(self, titulo_id: int) -> dict:
+        """
+        Lê impostos/retenções lançados no título (aba "Impostos").
+        Retorna dict {tributo: valor}. TODO(API): confirmar endpoint/campos.
+        """
+        if titulo_id is None:
+            return {}
+        for endpoint in (f"/bill-debts/{titulo_id}/taxes",
+                         f"/bill-debts/{titulo_id}/tax-information"):
+            try:
+                resp = self._request_with_retry("GET", endpoint)
+                data = resp.json()
+                results = data.get("results", data if isinstance(data, list) else [data])
+                impostos = {}
+                for r in results:
+                    nome = (r.get("taxType") or r.get("type") or r.get("name") or "").upper()
+                    valor = r.get("value") or r.get("amount") or r.get("withheldValue")
+                    if nome and valor is not None:
+                        try:
+                            impostos[nome] = float(valor)
+                        except (TypeError, ValueError):
+                            pass
+                if impostos:
+                    return impostos
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"impostos via {endpoint} indisponível: {e}")
+        return {}
+
+    def consultar_notas_bulk(self, company_id: int = None, data_inicio: date = None,
+                             data_fim: date = None) -> list:
+        """
+        GET /bulk-data/v1/invoice-itens — itens de notas fiscais com impostos
+        destacados (ICMS, IPI, PIS, COFINS) para a conferência fiscal.
+        TODO(API): confirmar nomes dos parâmetros e campos de imposto.
+        """
+        params = {}
+        if company_id is not None:
+            params["companyId"] = company_id
+        if data_inicio:
+            params["startDate"] = data_inicio.strftime("%Y-%m-%d")
+        if data_fim:
+            params["endDate"] = data_fim.strftime("%Y-%m-%d")
+        try:
+            resp = self._request_with_retry("GET", "/bulk-data/v1/invoice-itens", params=params)
+            data = resp.json()
+            return data.get("data", data.get("results", [])) if isinstance(data, dict) else data
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao consultar bulk-data de notas: {e}")
+            return []
+
+    @staticmethod
+    def _txt(v):
+        return str(v).strip() if v not in (None, "") else None
+
+    @staticmethod
+    def _so_digitos(v):
+        if v in (None, ""):
+            return None
+        import re as _re
+        d = _re.sub(r"\D", "", str(v))
+        return d or None

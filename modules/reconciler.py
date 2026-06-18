@@ -44,7 +44,10 @@ class Reconciler:
         titulo: Titulo,
         nfe_data: Optional[NFeData],
         boletos: List[Boleto],
-        boleto_anexo: Optional[Boleto] = None
+        boleto_anexo: Optional[Boleto] = None,
+        info_pagamento=None,
+        impostos_destacados: Optional[dict] = None,
+        retencoes: Optional[dict] = None
     ) -> List[Divergencia]:
         divergencias = []
         
@@ -169,7 +172,103 @@ class Reconciler:
         if boleto_anexo is not None:
             divergencias.extend(self._reconciliar_boleto_anexo(titulo, nfe_data, boleto_anexo))
 
+        # CONFERÊNCIA DOS DADOS DE PAGAMENTO (anti-fraude: destino x fornecedor)
+        if info_pagamento is not None:
+            divergencias.extend(
+                self._reconciliar_pagamento(titulo, nfe_data, info_pagamento, boleto_anexo))
+
+        # CONFERÊNCIA DE IMPOSTOS / RETENÇÕES
+        if impostos_destacados or retencoes:
+            divergencias.extend(
+                self._reconciliar_impostos(titulo, nfe_data, impostos_destacados or {}, retencoes or {}))
+
         return divergencias
+
+    def _cnpj_fornecedor_ref(self, titulo: Titulo, nfe_data: Optional[NFeData]) -> str:
+        """CNPJ de referência do fornecedor (título -> NF)."""
+        return self._limpar_cnpj(titulo.fornecedor_cnpj) or (
+            self._limpar_cnpj(nfe_data.cnpj_emitente) if nfe_data else "")
+
+    def _reconciliar_pagamento(self, titulo, nfe_data, info, boleto_anexo) -> List[Divergencia]:
+        """
+        Confere os dados de pagamento cadastrados no título contra o fornecedor real.
+        Regra-mãe: o destino do pagamento (beneficiário do boleto / chave PIX-CNPJ /
+        titular da conta TED) tem que ser o MESMO CNPJ do fornecedor da nota.
+        """
+        divs: List[Divergencia] = []
+        cnpj_ref = self._cnpj_fornecedor_ref(titulo, nfe_data)
+        forma = (info.forma_pagamento or "").upper()
+
+        cnpj_destino = self._limpar_cnpj(info.cnpj_destino() or "")
+        # Se o boleto do anexo trouxe beneficiário e a info não, usa o do boleto
+        if not cnpj_destino and boleto_anexo:
+            cnpj_destino = self._limpar_cnpj(boleto_anexo.cnpj_beneficiario)
+
+        # 1) Destino x fornecedor (CRÍTICA)
+        if cnpj_destino and cnpj_ref and cnpj_destino != cnpj_ref:
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="PAGAMENTO_DESTINO_DIVERGENTE",
+                campo=f"Destino do Pagamento ({forma or 'N/D'})",
+                valor_sienge=cnpj_ref, valor_nfe="-", valor_boleto=cnpj_destino,
+                criticidade="CRITICA", danfe_path=titulo.danfe_path,
+            ))
+
+        # 2) PIX com chave não-CNPJ: não dá pra confirmar o titular -> conferência manual
+        if "PIX" in forma and info.tipo_chave_pix and info.tipo_chave_pix.upper() != "CNPJ":
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="PIX_NAO_VERIFICAVEL",
+                campo="Chave PIX",
+                valor_sienge=f"{info.tipo_chave_pix}: {info.chave_pix or '-'}",
+                valor_nfe="-", valor_boleto="Conferir titular manualmente",
+                criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+            ))
+
+        # 3) Forma "BOLETO" sem boleto identificado no anexo (ATENÇÃO)
+        if "BOLETO" in forma and boleto_anexo is None and not info.linha_digitavel:
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="PAGAMENTO_FORMA_INCOMPATIVEL",
+                campo="Forma de Pagamento",
+                valor_sienge="BOLETO cadastrado", valor_nfe="-",
+                valor_boleto="Nenhum boleto/linha digitável encontrado",
+                criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+            ))
+        return divs
+
+    def _reconciliar_impostos(self, titulo, nfe_data, destacados: dict, retencoes: dict) -> List[Divergencia]:
+        """
+        Confere impostos destacados (nota) e retenções (título), e líquido x bruto.
+        Trabalha de forma tolerante: só aponta quando há dados dos dois lados.
+        """
+        divs: List[Divergencia] = []
+
+        # Impostos destacados x lançados (mesma chave de tributo)
+        for tributo in set(destacados) & set(retencoes):
+            v_nota = float(destacados.get(tributo) or 0)
+            v_tit = float(retencoes.get(tributo) or 0)
+            if abs(v_nota - v_tit) > 0.05:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="IMPOSTO_DIVERGENTE", campo=f"Imposto/Retenção {tributo}",
+                    valor_sienge=f"{v_tit:.2f}", valor_nfe=f"{v_nota:.2f}", valor_boleto="-",
+                    criticidade="CRITICA", danfe_path=titulo.danfe_path,
+                ))
+
+        # Líquido x Bruto: valor a pagar ~ valor da nota - retenções
+        if nfe_data and retencoes:
+            total_retido = sum(float(v or 0) for v in retencoes.values())
+            liquido_esperado = nfe_data.valor_total - total_retido
+            if abs(liquido_esperado - titulo.valor_liquido) > 0.05:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="LIQUIDO_BRUTO_DIVERGENTE", campo="Líquido x Bruto",
+                    valor_sienge=f"{titulo.valor_liquido:.2f}",
+                    valor_nfe=f"{liquido_esperado:.2f} (nota {nfe_data.valor_total:.2f} - ret. {total_retido:.2f})",
+                    valor_boleto="-", criticidade="CRITICA", danfe_path=titulo.danfe_path,
+                ))
+        return divs
 
     def _reconciliar_boleto_anexo(
         self,

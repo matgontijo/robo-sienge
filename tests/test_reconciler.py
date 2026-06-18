@@ -95,3 +95,56 @@ def test_sem_anexo(reconciler, titulo_base, nfe_base):
     divergencias = reconciler.reconciliar(titulo_base, None, [])
     assert len(divergencias) == 1
     assert divergencias[0].tipo == "SEM_ANEXO"
+
+
+# ============================================================
+# Conferência de PAGAMENTO (anti-fraude) e IMPOSTOS/RETENÇÕES
+# ============================================================
+from models import InfoPagamento
+
+
+def test_info_pagamento_cnpj_destino_prioriza_beneficiario():
+    info = InfoPagamento(forma_pagamento="TED", titular_cnpj="33333333000133",
+                         beneficiario_cnpj="22222222000122")
+    assert info.cnpj_destino() == "22222222000122"
+    info2 = InfoPagamento(forma_pagamento="PIX", tipo_chave_pix="CNPJ", chave_pix="44444444000144")
+    assert info2.cnpj_destino() == "44444444000144"
+    assert InfoPagamento(forma_pagamento="PIX", tipo_chave_pix="EMAIL",
+                         chave_pix="x@y.com").cnpj_destino() is None
+
+
+def test_pagamento_destino_divergente(reconciler, titulo_base, nfe_base):
+    # Destino do pagamento (beneficiário) com CNPJ diferente do fornecedor -> CRÍTICA
+    info = InfoPagamento(forma_pagamento="TED", beneficiario_cnpj="99999999000199")
+    divs = reconciler.reconciliar(titulo_base, nfe_base, [], info_pagamento=info)
+    tipos = {d.tipo for d in divs}
+    assert "PAGAMENTO_DESTINO_DIVERGENTE" in tipos
+    d = next(x for x in divs if x.tipo == "PAGAMENTO_DESTINO_DIVERGENTE")
+    assert d.criticidade == "CRITICA"
+
+
+def test_pagamento_destino_ok(reconciler, titulo_base, nfe_base):
+    # Mesmo CNPJ do fornecedor -> sem divergência de destino
+    info = InfoPagamento(forma_pagamento="TED", beneficiario_cnpj="11111111000111")
+    divs = reconciler.reconciliar(titulo_base, nfe_base, [], info_pagamento=info)
+    assert "PAGAMENTO_DESTINO_DIVERGENTE" not in {d.tipo for d in divs}
+
+
+def test_pix_nao_verificavel(reconciler, titulo_base, nfe_base):
+    info = InfoPagamento(forma_pagamento="PIX", tipo_chave_pix="EMAIL", chave_pix="a@b.com")
+    divs = reconciler.reconciliar(titulo_base, nfe_base, [], info_pagamento=info)
+    d = next(x for x in divs if x.tipo == "PIX_NAO_VERIFICAVEL")
+    assert d.criticidade == "ATENCAO"
+
+
+def test_imposto_divergente(reconciler, titulo_base, nfe_base):
+    divs = reconciler.reconciliar(
+        titulo_base, nfe_base, [],
+        impostos_destacados={"ICMS": 18.0}, retencoes={"ICMS": 10.0})
+    assert "IMPOSTO_DIVERGENTE" in {d.tipo for d in divs}
+
+
+def test_liquido_bruto_divergente(reconciler, titulo_base, nfe_base):
+    # nota 100, retenção 10 -> líquido esperado 90; título paga 100 -> divergência
+    divs = reconciler.reconciliar(titulo_base, nfe_base, [], retencoes={"IRRF": 10.0})
+    assert "LIQUIDO_BRUTO_DIVERGENTE" in {d.tipo for d in divs}
