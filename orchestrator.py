@@ -81,17 +81,14 @@ def processar_titulo(
     boleto_anexo = None
     info_pagamento = None
     retencoes = {}
+    destacados = {}
+    nfe_data = None
     try:
-        # 0. Título do relatório: resolver ID interno e tentar NF pela API do Sienge
-        if from_report and sienge_cli is not None:
-            if titulo.id is None:
-                titulo.id = sienge_cli.resolver_titulo_por_numero(
-                    titulo.numero, titulo.parcela, data_inicio, data_fim
-                )
-            sienge_cli.resolver_nota_fiscal(titulo)
-            # Usa o CNPJ da NF (API) como referência do fornecedor p/ o cruzamento
-            if not titulo.fornecedor_cnpj and titulo.nf_cnpj_emitente:
-                titulo.fornecedor_cnpj = titulo.nf_cnpj_emitente
+        # 0. Título do relatório: resolver o ID interno do título no Sienge
+        if from_report and sienge_cli is not None and titulo.id is None:
+            titulo.id = sienge_cli.resolver_titulo_por_numero(
+                titulo.numero, titulo.parcela, data_inicio, data_fim
+            )
 
         # a. Baixar anexos (somente se já temos o ID interno e o Sienge disponível)
         if titulo.id is not None and sienge_cli is not None:
@@ -120,41 +117,44 @@ def processar_titulo(
                 titulo.forma_pagamento = info_pagamento.forma_pagamento
             retencoes = sienge_cli.consultar_impostos_titulo(titulo.id) or {}
 
-        # b. Chave NF-e: da API (pula OCR) OU via OCR do anexo NF (fallback)
-        if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None:
-            titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
+        # b. Nota fiscal via NF-e de Produto (/nfes) — fonte primária (substitui Sefaz)
+        if from_report and sienge_cli is not None:
+            res_nfe = sienge_cli.resolver_nfe_produto_para_titulo(titulo, data_inicio, data_fim)
+            if res_nfe and res_nfe.get("nfe_data"):
+                nfe_data = res_nfe["nfe_data"]
+                destacados = res_nfe.get("destacados") or {}
+                # CNPJ da nota como referência do fornecedor p/ o cruzamento
+                if not titulo.fornecedor_cnpj and titulo.nf_cnpj_emitente:
+                    titulo.fornecedor_cnpj = titulo.nf_cnpj_emitente
 
-        if not titulo.chave_nfe or sefaz_cli is None:
-            # Sem chave (ou Sefaz indisponível): reconciliador apontará SEM_ANEXO/ILEGÍVEL;
-            # boleto do anexo ainda é cruzado.
-            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
-                    "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": None}
-
-        # c. Buscar XML na SEFAZ
-        xml_str = sefaz_cli.buscar_xml_por_chave(titulo.chave_nfe)
-        if not xml_str:
-            return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
-                    "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": None}
-
-        titulo.nfe_xml = xml_str
-        nfe_data = _parse_xml_to_nfedata(xml_str)
-
-        # d. Gerar DANFE
-        import os
-        danfe_path = os.path.join(config.OUTPUT_DIR, "danfes", f"{titulo.chave_nfe}.pdf")
-        if not os.path.exists(danfe_path):
-            danfe_path = danfe_gen.gerar_pdf(xml_str, danfe_path)
-
-        titulo.danfe_path = danfe_path
-        nfe_data.danfe_path = danfe_path
+        # c. Fallback: OCR da chave no anexo + Sefaz, se o /nfes não trouxe a nota
+        if nfe_data is None:
+            if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None:
+                titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
+            if titulo.chave_nfe and sefaz_cli is not None:
+                try:
+                    xml_str = sefaz_cli.buscar_xml_por_chave(titulo.chave_nfe)
+                    if xml_str:
+                        titulo.nfe_xml = xml_str
+                        nfe_data = _parse_xml_to_nfedata(xml_str)
+                        import os
+                        danfe_path = os.path.join(config.OUTPUT_DIR, "danfes", f"{titulo.chave_nfe}.pdf")
+                        if not os.path.exists(danfe_path):
+                            danfe_path = danfe_gen.gerar_pdf(xml_str, danfe_path)
+                        titulo.danfe_path = danfe_path
+                        nfe_data.danfe_path = danfe_path
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Sefaz falhou para a chave {titulo.chave_nfe}: {e}")
 
         return {"titulo": titulo, "nfe": nfe_data, "boleto_anexo": boleto_anexo,
-                "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": None}
+                "info_pagamento": info_pagamento, "retencoes": retencoes,
+                "destacados": destacados, "erro": None}
 
     except Exception as e:
         logger.error(f"Erro inesperado no processamento do título {titulo.id}: {e}")
         return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
-                "info_pagamento": info_pagamento, "retencoes": retencoes, "erro": str(e)}
+                "info_pagamento": info_pagamento, "retencoes": retencoes,
+                "destacados": destacados, "erro": str(e)}
 
 def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por: str = "scheduler", relatorio_path: str = None) -> int:
     start_time = time.time()
@@ -276,6 +276,7 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             boleto_anexo = r.get("boleto_anexo")
             info_pagamento = r.get("info_pagamento")
             retencoes = r.get("retencoes") or {}
+            destacados = r.get("destacados") or {}
 
             if erro:
                 titulos_erro.append((t, erro))
@@ -283,7 +284,8 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
 
             divs = reconciler.reconciliar(
                 t, nfe, boletos_dda, boleto_anexo,
-                info_pagamento=info_pagamento, retencoes=retencoes,
+                info_pagamento=info_pagamento,
+                impostos_destacados=destacados, retencoes=retencoes,
             )
             if not divs:
                 titulos_ok.append(t)

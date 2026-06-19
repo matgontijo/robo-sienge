@@ -635,6 +635,112 @@ class SiengeClient:
         logger.success(f"NF-e de produto consolidada via API para a chave {chave}.")
         return consolidado
 
+    def listar_nfes(self, data_inicio: date = None, data_fim: date = None, numero: str = None) -> list:
+        """GET /nfes — lista NF-e de produto por período (e número, se a API aceitar)."""
+        params = {"limit": 200, "offset": 0}
+        if data_inicio:
+            params["startDate"] = data_inicio.strftime("%Y-%m-%d")
+        if data_fim:
+            params["endDate"] = data_fim.strftime("%Y-%m-%d")
+        if numero:
+            params["nfeNumber"] = numero  # TODO(API): confirmar nome do filtro
+        try:
+            resp = self._request_with_retry("GET", "/nfes", params=params)
+            return resp.json().get("results", [])
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao listar /nfes: {e}")
+            return []
+
+    def resolver_nfe_produto_para_titulo(self, titulo, data_inicio: date = None, data_fim: date = None):
+        """
+        Resolve a NF-e de Produto do título via /nfes (substitui Sefaz/OCR):
+        usa a chave (do anexo/título) ou casa por número na listagem, e consolida
+        os dados da nota. Preenche os campos nf_* do título e devolve
+        {nfe_data: NFeData, destacados: dict} ou None.
+        """
+        chave = titulo.chave_nfe or titulo.nf_chave_api
+        if not chave and titulo.numero_documento and (titulo.tipo_documento or "").upper().startswith("NF"):
+            for nf in self.listar_nfes(data_inicio, data_fim, numero=titulo.numero_documento):
+                k = self._primeiro_campo(nf, ("nfeKey", "accessKey", "key", "chaveAcesso"))
+                if k:
+                    chave = str(k)
+                    break
+        if not chave:
+            return None
+
+        consolidado = self.consultar_nfe_produto(chave)
+        if not consolidado:
+            return None
+
+        nfe_data, destacados = self._extrair_nfedata_de_nfes(consolidado, chave)
+        titulo.chave_nfe = chave
+        titulo.nf_chave_api = chave
+        if nfe_data:
+            titulo.nf_cnpj_emitente = nfe_data.cnpj_emitente or titulo.nf_cnpj_emitente
+            titulo.nf_valor = nfe_data.valor_total or titulo.nf_valor
+            titulo.nf_numero = nfe_data.numero_nfe or titulo.nf_numero
+        return {"nfe_data": nfe_data, "destacados": destacados}
+
+    def _extrair_nfedata_de_nfes(self, c: dict, chave: str):
+        """Monta um NFeData + dict de impostos destacados a partir do /nfes consolidado.
+        TODO(API): confirmar nomes de campo após autorização do recurso."""
+        from models import NFeData
+        from datetime import date as _date
+        nota = c.get("nota") or {}
+        emit = c.get("emitente_destinatario") or {}
+        icms = c.get("icms") or {}
+        issqn = c.get("issqn") or {}
+        g = self._primeiro_campo
+
+        def _cnpj(d):
+            v = g(d, ("issuerCnpj", "emitterCnpj", "cnpj", "issuerCpfCnpj"))
+            if v:
+                return self._so_digitos(v)
+            for sub in ("issuer", "emitter", "emitente"):
+                if isinstance(d.get(sub), dict):
+                    vv = self._primeiro_campo(d[sub], ("cnpj", "cpfCnpj", "cnpjCpf"))
+                    if vv:
+                        return self._so_digitos(vv)
+            return None
+
+        cnpj_emit = _cnpj(emit) or _cnpj(nota) or ""
+        valor = g(nota, ("totalValue", "value", "invoiceValue", "totalNfeValue", "vNF"))
+        numero = g(nota, ("number", "nfeNumber", "nNF", "invoiceNumber"))
+        serie = g(nota, ("series", "serie"))
+        nome = g(emit, ("issuerName", "emitterName", "issuerCorporateName"))
+        try:
+            valor_f = float(valor) if valor is not None else 0.0
+        except (TypeError, ValueError):
+            valor_f = 0.0
+        data_em = None
+        de = g(nota, ("issueDate", "emissionDate", "dhEmi", "date"))
+        if de:
+            try:
+                data_em = _date.fromisoformat(str(de)[:10])
+            except ValueError:
+                pass
+
+        nfe = NFeData(
+            chave=chave, cnpj_emitente=cnpj_emit, nome_emitente=str(nome or ""),
+            valor_total=valor_f, valor_liquido=valor_f, data_emissao=data_em,
+            numero_nfe=str(numero or ""), serie=str(serie or ""),
+        )
+
+        destacados = {}
+        vi = g(icms, ("totalIcms", "icmsValue", "value", "vICMS"))
+        if vi is not None:
+            try:
+                destacados["ICMS"] = float(vi)
+            except (TypeError, ValueError):
+                pass
+        vs = g(issqn, ("totalIssqn", "issqnValue", "value", "vISS"))
+        if vs is not None:
+            try:
+                destacados["ISSQN"] = float(vs)
+            except (TypeError, ValueError):
+                pass
+        return nfe, destacados
+
     @staticmethod
     def _txt(v):
         return str(v).strip() if v not in (None, "") else None
