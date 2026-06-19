@@ -35,6 +35,7 @@ def _rodar_diagnostico(numero_titulo=None):
         ("Títulos Contas a Pagar",   "/bill-debts", {"startDueDate": ini, "endDueDate": fim, "limit": 1}),
         ("Credores",                 "/creditors", {"limit": 1}),
         ("Notas Fiscais de Compra",  "/purchase-invoices", {"limit": 1}),
+        ("Notas Fiscais Eletronicas (NF-e Produto)", "/nfes", {"startDate": ini, "endDate": fim, "limit": 1}),
         ("Notas Fiscais Bulk Data",  "/bulk-data/v1/invoice-itens", {"limit": 1}),
     ]
 

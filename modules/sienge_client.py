@@ -596,6 +596,45 @@ class SiengeClient:
             logger.warning(f"Falha ao consultar bulk-data de notas: {e}")
             return []
 
+    def consultar_nfe_produto(self, chave: str) -> Optional[dict]:
+        """
+        Consolida a NF-e de Produto pelo módulo "Notas Fiscais Eletrônicas de Produto"
+        do Sienge (o Sienge já importa o XML da Sefaz — dispensa certificado/OCR).
+
+        Endpoints (confirmados na doc oficial /docs/#/nfe-api-v1):
+          GET /nfes/{chave}
+          GET /nfes/{chave}/issuers-recipients   -> emitente/destinatário (CNPJ)
+          GET /nfes/{chave}/payments             -> formas de pagamento
+          GET /nfes/{chave}/icms                 -> ICMS total
+          GET /nfes/{chave}/issqn                -> ISSQN total
+
+        Retorna um dict consolidado {nota, emitente_destinatario, pagamentos, icms, issqn}
+        ou None. TODO(API): mapear os nomes finais de campo após autorização.
+        """
+        if not chave:
+            return None
+        consolidado = {}
+        partes = {
+            "nota": f"/nfes/{chave}",
+            "emitente_destinatario": f"/nfes/{chave}/issuers-recipients",
+            "pagamentos": f"/nfes/{chave}/payments",
+            "icms": f"/nfes/{chave}/icms",
+            "issqn": f"/nfes/{chave}/issqn",
+        }
+        achou = False
+        for nome, endpoint in partes.items():
+            try:
+                resp = self._request_with_retry("GET", endpoint)
+                consolidado[nome] = resp.json()
+                achou = True
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"NF-e produto {nome} ({endpoint}) indisponível: {e}")
+        if not achou:
+            logger.warning(f"NF-e de produto não encontrada para a chave {chave}.")
+            return None
+        logger.success(f"NF-e de produto consolidada via API para a chave {chave}.")
+        return consolidado
+
     @staticmethod
     def _txt(v):
         return str(v).strip() if v not in (None, "") else None
