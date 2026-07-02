@@ -114,7 +114,105 @@
         <div class="step"><span class="idx">5</span><b>Relatório + Painel</b><span>Excel com divergências classificadas e aba de Pagamentos; histórico aqui no painel</span></div>
     </div>
 
-    <h2 class="section"><span class="n">2</span> O que já é conferido hoje</h2>
+    <h2 class="section"><span class="n">2</span> Resultados do último ciclo</h2>
+    <p class="section-sub" id="res-sub">Carregando números do banco do robô…</p>
+    <div class="kpis" id="res-kpis" style="display:none">
+        <div class="kpi blue"><div class="num" id="rk-titulos">–</div><div class="lbl">títulos conferidos</div></div>
+        <div class="kpi good"><div class="num" id="rk-ok">–</div><div class="lbl">liberados sem divergência</div></div>
+        <div class="kpi"><div class="num" id="rk-atencao" style="color:var(--warn)">–</div><div class="lbl">pontos de atenção</div></div>
+        <div class="kpi"><div class="num" id="rk-criticas" style="color:var(--crit)">–</div><div class="lbl">divergências críticas</div></div>
+    </div>
+    <div class="grid2" id="res-detalhe" style="display:none">
+        <div class="card">
+            <h3>Apontamentos por tipo</h3>
+            <table><thead><tr><th>O que o robô apontou</th><th class="center">Qtd</th></tr></thead>
+                <tbody id="res-tipos"></tbody></table>
+        </div>
+        <div class="card">
+            <h3>Ciclos recentes</h3>
+            <table><thead><tr><th>Quando</th><th class="center">Títulos</th><th class="center">OK</th><th class="center">Críticas</th></tr></thead>
+                <tbody id="res-execs"></tbody></table>
+            <p style="margin-top:10px"><a href="#" id="res-download" style="color:var(--accent); font-weight:700; display:none">⬇ Baixar o Excel do último ciclo</a></p>
+        </div>
+    </div>
+    <script>
+    (async function () {
+        const NOMES = {
+            "PAGAMENTO_DESTINO_DIVERGENTE": "🔴 Destino do pagamento ≠ CNPJ do credor",
+            "CNPJ_DIVERGENTE": "🔴 CNPJ da nota ≠ credor do título",
+            "VALOR_DIVERGENTE": "🔴 Valor do título ≠ valor da nota",
+            "LIQUIDO_BRUTO_DIVERGENTE": "🔴 Líquido ≠ bruto − retenções",
+            "IMPOSTO_DIVERGENTE": "🔴 Imposto retido ≠ destacado na nota",
+            "CHAVE_NFE_INVALIDA": "🔴 Chave de NF-e inválida",
+            "BOLETO_NAO_ENCONTRADO": "🔴 Boleto não encontrado no DDA",
+            "SEM_ANEXO": "🟡 Título sem anexo no Sienge",
+            "ANEXO_ILEGIVEL": "🟡 Anexo não lido (OCR pendente)",
+            "PIX_NAO_VERIFICAVEL": "🟡 Chave Pix não verificável (e-mail/telefone)",
+            "PAGAMENTO_FORMA_INCOMPATIVEL": "🟡 Forma de pagamento incompatível",
+            "VENCIMENTO_DIVERGENTE": "🟡 Vencimento divergente",
+        };
+        const sub = document.getElementById("res-sub");
+        const tok = sessionStorage.getItem("auth_token");
+        if (!tok) { sub.textContent = "Faça login no painel para ver os números do último ciclo."; return; }
+        const H = { headers: { "Authorization": "Basic " + tok } };
+        try {
+            const execs = await (await fetch("/api/execucoes?limit=10", H)).json();
+            const done = (execs || []).filter(e => e.status === "CONCLUIDO");
+            if (!done.length) { sub.textContent = "Nenhum ciclo concluído ainda — rode o robô em Execuções."; return; }
+            const e = done[0];
+            const quando = (e.iniciado_em || "").replace("T", " ").slice(0, 16);
+            sub.textContent = "Último ciclo concluído em " + quando + " · dados ao vivo do banco do robô.";
+            document.getElementById("rk-titulos").textContent = e.total_titulos ?? "–";
+            document.getElementById("rk-ok").textContent = e.total_ok ?? "–";
+            document.getElementById("rk-criticas").textContent = e.total_criticos ?? 0;
+            document.getElementById("rk-atencao").textContent =
+                Math.max(0, (e.total_divergencias ?? 0) - (e.total_criticos ?? 0));
+            document.getElementById("res-kpis").style.display = "";
+
+            const divs = await (await fetch("/api/execucoes/" + e.id + "/divergencias", H)).json();
+            const porTipo = {};
+            (divs || []).forEach(d => { porTipo[d.tipo] = (porTipo[d.tipo] || 0) + 1; });
+            const tb = document.getElementById("res-tipos");
+            Object.entries(porTipo).sort((a, b) => b[1] - a[1]).forEach(([tipo, qtd]) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = "<td>" + (NOMES[tipo] || tipo) + "</td><td class='center'><b>" + qtd + "</b></td>";
+                tb.appendChild(tr);
+            });
+            if (!Object.keys(porTipo).length)
+                tb.innerHTML = "<tr><td colspan='2'>Nenhuma divergência — todos os títulos liberados ✔</td></tr>";
+
+            const te = document.getElementById("res-execs");
+            done.slice(0, 5).forEach(x => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = "<td>" + (x.iniciado_em || "").replace("T", " ").slice(0, 16) + "</td>" +
+                    "<td class='center'>" + (x.total_titulos ?? "–") + "</td>" +
+                    "<td class='center'>" + (x.total_ok ?? "–") + "</td>" +
+                    "<td class='center'>" + (x.total_criticos ?? 0) + "</td>";
+                te.appendChild(tr);
+            });
+
+            const dl = document.getElementById("res-download");
+            if (e.relatorio_path) {
+                dl.style.display = "";
+                dl.onclick = async (ev) => {
+                    ev.preventDefault();
+                    const r = await fetch("/api/execucoes/" + e.id + "/relatorio", H);
+                    if (!r.ok) return alert("Relatório indisponível.");
+                    const blob = await r.blob();
+                    const a = document.createElement("a");
+                    a.href = URL.createObjectURL(blob);
+                    a.download = "conciliacao_ultimo_ciclo.xlsx";
+                    a.click();
+                };
+            }
+            document.getElementById("res-detalhe").style.display = "";
+        } catch (err) {
+            sub.textContent = "Não foi possível carregar os resultados (verifique o login no painel).";
+        }
+    })();
+    </script>
+
+    <h2 class="section"><span class="n">3</span> O que já é conferido hoje</h2>
     <div class="grid2">
         <div class="card">
             <h3>💸 Destino do pagamento (anti-fraude) <span class="badge b-ok">ATIVO</span></h3>
@@ -150,7 +248,7 @@
         </div>
     </div>
 
-    <h2 class="section"><span class="n">3</span> O que falta para operação plena</h2>
+    <h2 class="section"><span class="n">4</span> O que falta para operação plena</h2>
     <p class="section-sub">Nenhum item bloqueia o uso atual — são destravas que ampliam a cobertura da conferência.</p>
     <table>
         <thead><tr><th>Item</th><th>O que destrava</th><th>Quem resolve</th><th class="center">Status</th></tr></thead>
@@ -182,7 +280,7 @@
         </tbody>
     </table>
 
-    <h2 class="section"><span class="n">4</span> Custos</h2>
+    <h2 class="section"><span class="n">5</span> Custos</h2>
     <p class="section-sub">Operação atual é gratuita. Valores abaixo em referência mensal.</p>
     <table>
         <thead><tr><th>Serviço</th><th>Para quê</th><th class="center">Custo hoje</th><th>Observação</th></tr></thead>
@@ -221,7 +319,7 @@
     </table>
     <div class="note">💡 <b>Total hoje: R$ 0/mês.</b> O único custo em vista é o DDA (se o banco cobrar) — todo o resto roda no free tier ou já está contratado.</div>
 
-    <h2 class="section"><span class="n">5</span> O que pode melhorar (roadmap)</h2>
+    <h2 class="section"><span class="n">6</span> O que pode melhorar (roadmap)</h2>
     <div class="grid2">
         <div class="card">
             <h3>Curto prazo <span class="badge b-info">SEM CUSTO</span></h3>
@@ -257,7 +355,7 @@
         </div>
     </div>
 
-    <h2 class="section"><span class="n">6</span> Classificação das divergências</h2>
+    <h2 class="section"><span class="n">7</span> Classificação das divergências</h2>
     <table>
         <thead><tr><th class="center">Nível</th><th>Significado</th><th>Exemplos</th></tr></thead>
         <tbody>

@@ -48,7 +48,8 @@ class Reconciler:
         info_pagamento=None,
         impostos_destacados: Optional[dict] = None,
         retencoes: Optional[dict] = None,
-        dda_disponivel: bool = True
+        dda_disponivel: bool = True,
+        ocr_disponivel: bool = True
     ) -> List[Divergencia]:
         divergencias = []
         
@@ -67,8 +68,9 @@ class Reconciler:
             ))
             # Se não tem anexo, não tem chave nem nfe, só podemos checar boleto se for o caso
             
-        # REGRA 6 - ANEXO ILEGÍVEL
-        if (titulo.attachment_bytes or titulo.attachment_url) and not titulo.chave_nfe:
+        # REGRA 6 - ANEXO ILEGÍVEL — só quando o OCR está ativo (sem OCR, a leitura
+        # do anexo não foi tentada; marcar tudo como "ilegível" seria ruído)
+        if ocr_disponivel and (titulo.attachment_bytes or titulo.attachment_url) and not titulo.chave_nfe:
             divergencias.append(Divergencia(
                 titulo_id=titulo.id,
                 titulo_numero=titulo.numero,

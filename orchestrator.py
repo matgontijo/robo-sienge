@@ -337,6 +337,7 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                 info_pagamento=info_pagamento,
                 impostos_destacados=destacados, retencoes=retencoes,
                 dda_disponivel=dda_disponivel,
+                ocr_disponivel=reader is not None,
             )
             if not divs:
                 titulos_ok.append(t)
