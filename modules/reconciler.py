@@ -193,6 +193,8 @@ class Reconciler:
             divergencias.extend(
                 self._reconciliar_linha_digitavel(titulo, info_pagamento))
             divergencias.extend(
+                self._reconciliar_banco_transferencia(titulo, info_pagamento))
+            divergencias.extend(
                 self._reconciliar_liquido_parcela(titulo, info_pagamento, retencoes or {}))
 
         # CONFERÊNCIA DE IMPOSTOS / RETENÇÕES
@@ -270,6 +272,50 @@ class Reconciler:
                     valor_boleto=str(venc_boleto),
                     criticidade="ATENCAO", danfe_path=titulo.danfe_path,
                 ))
+        return divs
+
+    def _reconciliar_banco_transferencia(self, titulo: Titulo, info) -> List[Divergencia]:
+        """
+        TED/transferência x banco da conta destino:
+          - conta destino no Santander (033) => tem que ser DEPÓSITO/crédito em
+            conta do MESMO banco (TED para o próprio banco é recusada/tarifada);
+          - conta destino em outro banco => tem que ser TED/transferência para
+            outros bancos, não depósito mesmo banco.
+        """
+        divs: List[Divergencia] = []
+        banco = re.sub(r"\D", "", str(info.banco or ""))
+        if not banco:
+            return divs
+        banco = banco.zfill(3)
+        nome_banco = _BANCOS.get(banco, f"banco {banco}")
+        forma = (info.forma_pagamento or "").upper()
+
+        eh_ted = "TED" in forma or "DOC" in forma or ("TRANSFER" in forma and "MESMO" not in forma)
+        eh_deposito = any(k in forma for k in (
+            "DEPOSITO", "DEPÓSITO", "MESMO BANCO", "CREDITO EM CONTA", "CRÉDITO EM CONTA"))
+        if not (eh_ted or eh_deposito):
+            return divs
+
+        if banco == BANCO_CASA and eh_ted and not eh_deposito:
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="TRANSFERENCIA_BANCO_INCOMPATIVEL",
+                campo="Forma de Transferência",
+                valor_sienge=f"Forma: {info.forma_pagamento}",
+                valor_nfe="-",
+                valor_boleto=f"Conta destino é Santander (033) — cadastrar como DEPÓSITO/mesmo banco, não TED",
+                criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+            ))
+        elif banco != BANCO_CASA and eh_deposito and not eh_ted:
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="TRANSFERENCIA_BANCO_INCOMPATIVEL",
+                campo="Forma de Transferência",
+                valor_sienge=f"Forma: {info.forma_pagamento}",
+                valor_nfe="-",
+                valor_boleto=f"Conta destino é do {nome_banco} — cadastrar como TED/outros bancos, não depósito mesmo banco",
+                criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+            ))
         return divs
 
     def _reconciliar_liquido_parcela(self, titulo: Titulo, info, retencoes: dict) -> List[Divergencia]:
