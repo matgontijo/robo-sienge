@@ -83,6 +83,7 @@ def processar_titulo(
     retencoes = {}
     destacados = {}
     nfe_data = None
+    anexos_info = None
     try:
         # 0. Título do relatório: resolver o ID interno do título no Sienge
         if from_report and sienge_cli is not None and titulo.id is None:
@@ -101,6 +102,13 @@ def processar_titulo(
                 )
                 anexos = sienge_cli.baixar_anexos_titulo(titulo.id, pasta)
                 titulo.attachment_bytes = anexos.get("nf_bytes") or anexos.get("boleto_bytes")
+                anexos_info = {
+                    "pasta": pasta,
+                    "nf_path": anexos.get("nf_path"),
+                    "boleto_path": anexos.get("boleto_path"),
+                    "arquivos": [{"nome": a.get("nome"), "path": a.get("path"), "tipo": a.get("tipo")}
+                                 for a in anexos.get("anexos", [])],
+                }
 
                 # a.1 Boleto: prioriza o anexo classificado como boleto
                 if reader is not None:
@@ -161,13 +169,70 @@ def processar_titulo(
 
         return {"titulo": titulo, "nfe": nfe_data, "boleto_anexo": boleto_anexo,
                 "info_pagamento": info_pagamento, "retencoes": retencoes,
-                "destacados": destacados, "erro": None}
+                "destacados": destacados, "anexos_info": anexos_info, "erro": None}
 
     except Exception as e:
         logger.error(f"Erro inesperado no processamento do título {titulo.id}: {e}")
         return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
                 "info_pagamento": info_pagamento, "retencoes": retencoes,
-                "destacados": destacados, "erro": str(e)}
+                "destacados": destacados, "anexos_info": anexos_info, "erro": str(e)}
+
+def _montar_dossie(exec_id: int, resultados: list) -> list:
+    """
+    Copia, para UMA pasta única (output/dossie/ciclo_N), apenas os documentos
+    essenciais de cada título — a melhor NF e o melhor boleto identificados nos
+    anexos (medições, e-mails e planilhas coladas pelo pessoal ficam de fora) —
+    com nome padronizado. Retorna o checklist para a aba "Dossiê" do relatório.
+    """
+    import os
+    import re
+    import shutil
+
+    def _slug(s, n=28):
+        return re.sub(r"[^A-Za-z0-9]+", "_", str(s or "")).strip("_")[:n] or "X"
+
+    pasta = os.path.join(config.OUTPUT_DIR, "dossie", f"ciclo_{exec_id}")
+    os.makedirs(pasta, exist_ok=True)
+
+    rows = []
+    for r in resultados:
+        t = r["titulo"]
+        info = r.get("anexos_info") or {}
+        forma = ((r.get("info_pagamento").forma_pagamento if r.get("info_pagamento") else "")
+                 or t.forma_pagamento or "").upper()
+        tipo_doc = (t.tipo_documento or "").upper()
+
+        nf_esperada = "NF" in tipo_doc          # NFE/NFSE/NFS -> nota esperada
+        boleto_esperado = "BOLETO" in forma
+
+        base = f"{t.numero}-{t.parcela or '1'}_{_slug(t.fornecedor_nome)}"
+        arq_nf = arq_boleto = None
+        for origem, sufixo in ((info.get("nf_path"), "NF"), (info.get("boleto_path"), "BOLETO")):
+            if origem and os.path.exists(origem):
+                destino = os.path.join(pasta, f"{base}_{sufixo}{os.path.splitext(origem)[1] or '.pdf'}")
+                try:
+                    shutil.copy2(origem, destino)
+                    if sufixo == "NF":
+                        arq_nf = os.path.basename(destino)
+                    else:
+                        arq_boleto = os.path.basename(destino)
+                except OSError as e:
+                    logger.warning(f"Dossiê: falha ao copiar {origem}: {e}")
+
+        status_nf = "✓" if arq_nf else ("FALTA" if nf_esperada else "n/a")
+        status_boleto = ("✓" if arq_boleto else "FALTA") if boleto_esperado else "n/a"
+        rows.append({
+            "numero": t.numero, "parcela": t.parcela, "fornecedor": t.fornecedor_nome,
+            "tipo_doc": t.tipo_documento, "forma": forma.title() if forma else "",
+            "nf": status_nf, "boleto": status_boleto,
+            "arq_nf": arq_nf, "arq_boleto": arq_boleto,
+            "total_anexos": len(info.get("arquivos") or []),
+        })
+    logger.success(f"Dossiê montado em {pasta}: "
+                   f"{sum(1 for x in rows if x['arq_nf'] or x['arq_boleto'])} títulos com documentos, "
+                   f"{sum(1 for x in rows if x['nf'] == 'FALTA')} sem NF, "
+                   f"{sum(1 for x in rows if x['boleto'] == 'FALTA')} sem boleto.")
+    return rows
 
 def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por: str = "scheduler", relatorio_path: str = None) -> int:
     start_time = time.time()
@@ -386,6 +451,14 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
         except Exception as e:  # noqa: BLE001
             log("WARNING", "dashboard", f"Falha ao gravar pagamentos no banco: {e}")
 
+        # Dossiê: pasta única só com NF/boleto de cada título + checklist
+        dossie_rows = []
+        if from_report:
+            try:
+                dossie_rows = _montar_dossie(exec_id, resultados_processamento)
+            except Exception as e:  # noqa: BLE001
+                log("WARNING", "dossie", f"Falha ao montar o dossiê: {e}")
+
         # Gerar Relatório
         relatorio_path = report_gen.gerar(
             divergencias=divergencias_finais,
@@ -393,7 +466,8 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             titulos_erro=titulos_erro,
             data_referencia=data_fim,
             output_dir=config.OUTPUT_DIR,
-            pagamentos=pagamentos_rows
+            pagamentos=pagamentos_rows,
+            dossie=dossie_rows
         )
         
         # Notificação

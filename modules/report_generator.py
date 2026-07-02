@@ -23,7 +23,8 @@ class ReportGenerator:
         titulos_erro: List[Tuple[Titulo, str]], # Titulo e motivo do erro
         data_referencia: date,
         output_dir: str,
-        pagamentos: List[dict] = None
+        pagamentos: List[dict] = None,
+        dossie: List[dict] = None
     ) -> str:
 
         wb = Workbook()
@@ -37,6 +38,11 @@ class ReportGenerator:
         if pagamentos:
             ws_pag = wb.create_sheet(title="Pagamentos")
             self._preencher_aba_pagamentos(ws_pag, pagamentos)
+
+        # Aba Dossiê (checklist dos documentos essenciais copiados p/ pasta única)
+        if dossie:
+            ws_dos = wb.create_sheet(title="Dossiê")
+            self._preencher_aba_dossie(ws_dos, dossie)
 
         # Aba Conferidos OK
         ws_ok = wb.create_sheet(title="Conferidos OK")
@@ -172,6 +178,46 @@ class ReportGenerator:
             row_num += 1
 
         ws.auto_filter.ref = f"A1:R{row_num - 1}"
+        self._auto_fit_columns(ws)
+
+    def _preencher_aba_dossie(self, ws, dossie):
+        """Checklist do dossiê: cada título com o status da NF e do boleto
+        (✓ copiado p/ a pasta única · FALTA · n/a quando não se aplica)."""
+        headers = ["Nº Título", "Parcela", "Fornecedor", "Tipo Doc", "Forma Pagto",
+                   "NF", "Boleto", "Arquivo NF", "Arquivo Boleto", "Anexos no título"]
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.fill = self.fill_header
+            cell.font = self.font_bold
+
+        row_num = 2
+        faltas_nf = faltas_bol = 0
+        for d in dossie:
+            ws.append([
+                d.get("numero"), d.get("parcela"), d.get("fornecedor"),
+                d.get("tipo_doc"), d.get("forma"), d.get("nf"), d.get("boleto"),
+                d.get("arq_nf") or "", d.get("arq_boleto") or "", d.get("total_anexos"),
+            ])
+            fill = None
+            if d.get("nf") == "FALTA":
+                fill = self.fill_critica
+                faltas_nf += 1
+            if d.get("boleto") == "FALTA":
+                fill = fill or self.fill_atencao
+                faltas_bol += 1
+            if d.get("nf") == "✓" and d.get("boleto") in ("✓", "n/a") and fill is None:
+                fill = self.fill_ok
+            if fill:
+                for col in range(1, len(headers) + 1):
+                    ws.cell(row=row_num, column=col).fill = fill
+            row_num += 1
+
+        ws.append([])
+        ws.append(["TOTAIS", f"Sem NF: {faltas_nf}", f"Sem boleto: {faltas_bol}",
+                   f"Completos: {sum(1 for d in dossie if d.get('nf') == '✓' and d.get('boleto') in ('✓', 'n/a'))}"])
+        for cell in ws[row_num + 1]:
+            cell.font = self.font_bold
+        ws.auto_filter.ref = f"A1:J{row_num - 1}"
         self._auto_fit_columns(ws)
 
     def _preencher_aba_ok(self, ws, titulos):
