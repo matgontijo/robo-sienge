@@ -32,7 +32,7 @@ def _rodar_diagnostico(numero_titulo=None):
 
     recursos = [
         ("Portadores (auth)",        "/bearers", {"limit": 1}),
-        ("Títulos Contas a Pagar",   "/bill-debts", {"startDueDate": ini, "endDueDate": fim, "limit": 1}),
+        ("Títulos Contas a Pagar",   "/bills", {"startDate": ini, "endDate": fim, "limit": 1}),
         ("Credores",                 "/creditors", {"limit": 1}),
         ("Notas Fiscais de Compra",  "/purchase-invoices", {"limit": 1}),
         ("Notas Fiscais Eletronicas (NF-e Produto)", "/nfes", {"startDate": ini, "endDate": fim, "limit": 1}),
@@ -48,6 +48,7 @@ def _rodar_diagnostico(numero_titulo=None):
         r = cli.probe(ep, params)
         s = r["status"]
         veredito = ("OK - liberado" if s == 200 else
+                    "OK - liberado (exige parametro)" if s == 400 else
                     "SEM AUTORIZACAO (403)" if s == 403 else
                     "NAO LIBERADO (404)" if s == 404 else
                     "AUTH FALHOU (401)" if s == 401 else f"({s})")

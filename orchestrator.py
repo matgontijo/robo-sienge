@@ -87,7 +87,7 @@ def processar_titulo(
         # 0. Título do relatório: resolver o ID interno do título no Sienge
         if from_report and sienge_cli is not None and titulo.id is None:
             titulo.id = sienge_cli.resolver_titulo_por_numero(
-                titulo.numero, titulo.parcela, data_inicio, data_fim
+                titulo.numero, titulo.parcela, data_inicio, data_fim, titulo=titulo
             )
 
         # a. Baixar anexos (somente se já temos o ID interno e o Sienge disponível)

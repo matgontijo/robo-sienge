@@ -14,43 +14,52 @@ def sienge_client():
         password="password"
     )
 
+def _bill(i):
+    return {"id": i, "documentNumber": str(100 + i), "documentIdentificationId": "NF",
+            "issueDate": "2024-01-01", "totalInvoiceAmount": 100.0, "discount": 0.0,
+            "status": "S", "originId": "CP", "accessKeyNumber": None}
+
 def test_listar_titulos_paginacao(mocker, sienge_client):
-    # Prepara os mocks das respostas (2 páginas)
+    # GET /bills pagina por resultSetMetadata.count (limit=200 por página)
     mock_request = mocker.patch.object(sienge_client.session, 'request')
-    
-    # Resposta da Página 1
+
     resp_page_1 = MagicMock()
     resp_page_1.status_code = 200
     resp_page_1.json.return_value = {
-        "results": [
-            {"id": 1, "documentNumber": "100", "providerCpfCnpj": "111", "value": 100.0, "balance": 100.0, "dueDate": "2024-01-01", "paymentMethod": "BOLETO", "situation": "ABERTO"},
-            {"id": 2, "documentNumber": "101", "providerCpfCnpj": "222", "value": 200.0, "balance": 200.0, "dueDate": "2024-01-02", "paymentMethod": "PIX", "situation": "ABERTO"}
-        ],
-        "resultSetMetadata": {"hasNext": True}
+        "results": [_bill(i) for i in range(1, 201)],
+        "resultSetMetadata": {"count": 201, "offset": 0, "limit": 200}
     }
-    
-    # Resposta da Página 2
+
     resp_page_2 = MagicMock()
     resp_page_2.status_code = 200
     resp_page_2.json.return_value = {
-        "results": [
-            {"id": 3, "documentNumber": "102", "providerCpfCnpj": "333", "value": 300.0, "balance": 300.0, "dueDate": "2024-01-03", "paymentMethod": "TED", "situation": "VENCIDO"}
-        ],
-        "resultSetMetadata": {"hasNext": False}
+        "results": [_bill(201)],
+        "resultSetMetadata": {"count": 201, "offset": 200, "limit": 200}
     }
-    
-    # Configura o mock para retornar a pág 1 na 1ª chamada e pág 2 na 2ª
+
     mock_request.side_effect = [resp_page_1, resp_page_2]
-    
+
     data_inicio = date(2024, 1, 1)
     data_fim = date(2024, 1, 31)
     titulos = sienge_client.listar_titulos(data_inicio, data_fim)
-    
+
     # Verifica se iterou todas as páginas
-    assert len(titulos) == 3
+    assert len(titulos) == 201
     assert titulos[0].id == 1
-    assert titulos[2].id == 3
+    assert titulos[0].numero == "1"          # nº do título = id do bill
+    assert titulos[0].numero_documento == "101"
+    assert titulos[-1].id == 201
     assert mock_request.call_count == 2
+
+def test_nfedata_da_chave():
+    # chave: cUF(2) AAMM(4) CNPJ(14) mod(2) serie(3) numero(9) tpEmis(1) cNF(8) DV(1)
+    chave = "35" + "2601" + "11222333000181" + "55" + "001" + "000175118" + "1" + "12345678" + "9"
+    nfe = SiengeClient._nfedata_da_chave(chave)
+    assert nfe is not None
+    assert nfe.cnpj_emitente == "11222333000181"
+    assert nfe.numero_nfe == "175118"
+    assert nfe.serie == "1"
+    assert SiengeClient._nfedata_da_chave("123") is None
 
 def test_baixar_anexo_sem_anexo(mocker, sienge_client):
     mock_request = mocker.patch.object(sienge_client.session, 'request')

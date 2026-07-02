@@ -257,7 +257,8 @@ class Reconciler:
                 ))
 
         # Líquido x Bruto: valor a pagar ~ valor da nota - retenções
-        if nfe_data and retencoes:
+        # (nfe_data derivado só da chave de acesso não tem valor — pula o check)
+        if nfe_data and nfe_data.valor_total and retencoes:
             total_retido = sum(float(v or 0) for v in retencoes.values())
             liquido_esperado = nfe_data.valor_total - total_retido
             if abs(liquido_esperado - titulo.valor_liquido) > 0.05:
