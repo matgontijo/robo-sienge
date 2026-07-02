@@ -74,13 +74,16 @@ class AttachmentReader:
         elif self.client is not None:
             self.provider = "anthropic"
         else:
-            raise ValueError("Nenhuma API de OCR configurada (GEMINI_API_KEY ou ANTHROPIC_API_KEY).")
-        logger.info(f"OCR de anexos usando provedor: {self.provider}"
-                    + (f" ({self.gemini_model})" if self.provider == "gemini" else ""))
+            # Sem OCR de IA: ainda funciona lendo a CAMADA DE TEXTO dos PDFs
+            # (93% dos anexos são PDFs digitais com texto embutido)
+            self.provider = None
+        logger.info("Leitor de anexos: camada de texto sempre ativa; OCR de IA: "
+                    + (f"{self.provider} ({self.gemini_model})" if self.provider == "gemini"
+                       else self.provider or "desativado"))
         self.cache = {}
         self.cache_boleto = {}
 
-        # Cache persistente em disco: cada anexo é lido pelo OCR uma única vez;
+        # Cache persistente em disco: cada anexo é lido uma única vez;
         # execuções seguintes reutilizam o resultado (hash do PDF -> dados).
         self._cache_path = cache_path
         self._cache_disk_lock = threading.Lock()
@@ -219,6 +222,54 @@ REGRAS OBRIGATÓRIAS:
             
         return imagens
 
+    # ------------------------------------------------------------------
+    # Camada de texto do PDF (sem OCR, sem custo)
+    # ------------------------------------------------------------------
+    _RE_CNPJ = re.compile(r"\d{2}[\s.]?\d{3}[\s.]?\d{3}[\s./]?\d{4}[\s-]?\d{2}")
+    _RE_LINHA = re.compile(r"\d[\d.\s]{40,70}\d")
+
+    def extrair_texto_pdf(self, pdf_bytes: bytes, max_paginas: int = 4) -> str:
+        """Extrai o texto embutido do PDF (PDFs digitais; scans retornam vazio)."""
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            txt = "\n".join(doc[i].get_text() for i in range(min(len(doc), max_paginas)))
+            doc.close()
+            return txt
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"PDF sem texto extraível: {e}")
+            return ""
+
+    def extrair_info_texto(self, pdf_bytes: bytes) -> dict:
+        """
+        Lê a camada de texto do PDF e retorna, sem OCR:
+          tem_texto (False = scan/foto), chave (NF-e 44 díg. com DV válido),
+          cnpjs (todos os CNPJs presentes) e linha_digitavel (boleto 47/48).
+        """
+        info = {"tem_texto": False, "chave": None, "cnpjs": [], "linha_digitavel": None, "digitos": ""}
+        if not pdf_bytes:
+            return info
+        txt = self.extrair_texto_pdf(pdf_bytes)
+        if len((txt or "").strip()) < 200:
+            return info
+        info["tem_texto"] = True
+        # Camada de texto pode ser lixo (scan com OCR ruim embutido) — marca a
+        # confiabilidade para as regras não tirarem conclusão de texto corrompido
+        info["texto_confiavel"] = txt.count("�") <= 3
+        # fluxo só de dígitos: robusto a CNPJ quebrado por espaços/linhas
+        info["digitos"] = re.sub(r"\D", "", txt)
+        info["cnpjs"] = sorted({re.sub(r"\D", "", m) for m in self._RE_CNPJ.findall(txt)})
+        compacto = re.sub(r"[\s.\-/]", "", txt)
+        for m in re.finditer(r"\d{44}", compacto):
+            if self._validar_chave_nfe(m.group()):
+                info["chave"] = m.group()
+                break
+        for m in self._RE_LINHA.finditer(txt):
+            dig = re.sub(r"\D", "", m.group())
+            if len(dig) in (47, 48):
+                info["linha_digitavel"] = dig
+                break
+        return info
+
     @staticmethod
     def _limpar_markdown_json(content: str) -> str:
         """Remove possível bloco de markdown ```json ... ``` em volta do JSON."""
@@ -234,6 +285,9 @@ REGRAS OBRIGATÓRIAS:
     def _chamar_vision(self, image_bytes: bytes, system_prompt: str, user_text: str,
                        max_tokens: int = 400) -> Optional[str]:
         """Envia a imagem para o provedor de OCR configurado e retorna o texto bruto."""
+        if self.provider is None:
+            self._tl.falha = True  # sem OCR: não conclui nada sobre a imagem
+            return None
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
         if self.provider == "gemini":
@@ -335,7 +389,23 @@ REGRAS OBRIGATÓRIAS:
         if pdf_hash in self.cache:
             logger.info("Chave obtida do cache para este PDF.")
             return self.cache[pdf_hash]
-            
+
+        # 1) Camada de texto (grátis, instantânea) — resolve os PDFs digitais
+        info_txt = self.extrair_info_texto(pdf_bytes)
+        if info_txt.get("chave"):
+            logger.success(f"Chave obtida da camada de texto do PDF: {info_txt['chave']}")
+            self.cache[pdf_hash] = info_txt["chave"]
+            self._salvar_cache_disco()
+            return info_txt["chave"]
+        if self.provider is None:
+            # Sem OCR: se o PDF é texto e não tem chave, a conclusão é confiável;
+            # se é scan, deixa sem cache para o OCR tentar quando for ativado.
+            if info_txt.get("tem_texto"):
+                self.cache[pdf_hash] = None
+                self._salvar_cache_disco()
+            return None
+
+        # 2) OCR de IA (fallback para scans/fotos)
         imagens = self._pdf_para_imagens(pdf_bytes)
         if not imagens:
             logger.warning("Nenhuma imagem gerada a partir do PDF.")
@@ -391,6 +461,26 @@ REGRAS OBRIGATÓRIAS:
         if pdf_hash in self.cache_boleto:
             return self.cache_boleto[pdf_hash]
 
+        # 1) Camada de texto (grátis): linha digitável impressa no PDF digital
+        info_txt = self.extrair_info_texto(pdf_bytes)
+        linha_txt = info_txt.get("linha_digitavel")
+        if linha_txt:
+            dec = decodificar_linha_digitavel(linha_txt) or {}
+            boleto = Boleto(
+                codigo_barras=linha_txt, cnpj_beneficiario="", nome_beneficiario="",
+                valor=dec.get("valor") or 0.0, data_vencimento=dec.get("vencimento"),
+            )
+            logger.success(f"Boleto obtido da camada de texto: valor={boleto.valor} venc={boleto.data_vencimento}")
+            self.cache_boleto[pdf_hash] = boleto
+            self._salvar_cache_disco()
+            return boleto
+        if self.provider is None:
+            if info_txt.get("tem_texto"):
+                self.cache_boleto[pdf_hash] = None
+                self._salvar_cache_disco()
+            return None
+
+        # 2) OCR de IA (fallback para scans/fotos)
         self._tl.falha = False
         for i, img in enumerate(self._pdf_para_imagens(pdf_bytes)[:self._MAX_PAGINAS_OCR]):
             dados = self._chamar_claude_boleto(img)

@@ -84,6 +84,7 @@ def processar_titulo(
     destacados = {}
     nfe_data = None
     anexos_info = None
+    nf_texto = None
     try:
         # 0. Título do relatório: resolver o ID interno do título no Sienge
         if from_report and sienge_cli is not None and titulo.id is None:
@@ -109,6 +110,12 @@ def processar_titulo(
                     "arquivos": [{"nome": a.get("nome"), "path": a.get("path"), "tipo": a.get("tipo")}
                                  for a in anexos.get("anexos", [])],
                 }
+
+                # Camada de texto da NF anexada (sem OCR): chave de acesso e CNPJs
+                if reader is not None and anexos.get("nf_bytes"):
+                    nf_texto = reader.extrair_info_texto(anexos.get("nf_bytes"))
+                    if not titulo.chave_nfe and nf_texto.get("chave"):
+                        titulo.chave_nfe = nf_texto["chave"]
 
                 # a.1 Boleto: prioriza o anexo classificado como boleto
                 if reader is not None:
@@ -169,13 +176,15 @@ def processar_titulo(
 
         return {"titulo": titulo, "nfe": nfe_data, "boleto_anexo": boleto_anexo,
                 "info_pagamento": info_pagamento, "retencoes": retencoes,
-                "destacados": destacados, "anexos_info": anexos_info, "erro": None}
+                "destacados": destacados, "anexos_info": anexos_info,
+                "nf_texto": nf_texto, "erro": None}
 
     except Exception as e:
         logger.error(f"Erro inesperado no processamento do título {titulo.id}: {e}")
         return {"titulo": titulo, "nfe": None, "boleto_anexo": boleto_anexo,
                 "info_pagamento": info_pagamento, "retencoes": retencoes,
-                "destacados": destacados, "anexos_info": anexos_info, "erro": str(e)}
+                "destacados": destacados, "anexos_info": anexos_info,
+                "nf_texto": nf_texto, "erro": str(e)}
 
 def _montar_dossie(exec_id: int, resultados: list) -> list:
     """
@@ -416,7 +425,8 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                 info_pagamento=info_pagamento,
                 impostos_destacados=destacados, retencoes=retencoes,
                 dda_disponivel=dda_disponivel,
-                ocr_disponivel=reader is not None,
+                ocr_disponivel=reader is not None and reader.provider is not None,
+                nf_texto=r.get("nf_texto"),
             )
             if not divs:
                 titulos_ok.append(t)

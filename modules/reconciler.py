@@ -59,7 +59,8 @@ class Reconciler:
         impostos_destacados: Optional[dict] = None,
         retencoes: Optional[dict] = None,
         dda_disponivel: bool = True,
-        ocr_disponivel: bool = True
+        ocr_disponivel: bool = True,
+        nf_texto: Optional[dict] = None
     ) -> List[Divergencia]:
         divergencias = []
         
@@ -208,6 +209,25 @@ class Reconciler:
                 self._reconciliar_banco_transferencia(titulo, info_pagamento))
             divergencias.extend(
                 self._reconciliar_liquido_parcela(titulo, info_pagamento, retencoes or {}))
+
+        # REGRA 9 - CNPJ DO CREDOR DENTRO DA NF ANEXADA (camada de texto, sem OCR)
+        # Se o PDF da NF tem texto e o CNPJ do credor não aparece em lugar nenhum
+        # dele (busca no fluxo de dígitos, imune a formatação), a nota anexada
+        # pode ser de outro fornecedor — conferência manual.
+        if nf_texto and nf_texto.get("tem_texto") and nf_texto.get("texto_confiavel") and titulo.fornecedor_cnpj:
+            # raiz do CNPJ (8 dígitos): identifica a empresa e sobrevive a
+            # quebras de formatação no PDF
+            cnpj_credor = self._limpar_cnpj(titulo.fornecedor_cnpj)[:8]
+            if len(cnpj_credor) == 8 and cnpj_credor not in (nf_texto.get("digitos") or ""):
+                divergencias.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="NF_SEM_CNPJ_DO_CREDOR",
+                    campo="CNPJ no documento anexado",
+                    valor_sienge=f"Credor: {titulo.fornecedor_cnpj}",
+                    valor_nfe=f"CNPJs no PDF: {', '.join((nf_texto.get('cnpjs') or [])[:4]) or 'nenhum'}",
+                    valor_boleto="Conferir se a NF anexada é do fornecedor certo",
+                    criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                ))
 
         # CONFERÊNCIA DE IMPOSTOS / RETENÇÕES
         if impostos_destacados or retencoes:

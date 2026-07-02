@@ -102,6 +102,7 @@ NOMES_TIPO_PT = {
     "PIX_NAO_VERIFICAVEL": "Chave Pix nao verificavel",
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompativel",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
+    "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor nao aparece na NF anexada",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 }
 
@@ -267,9 +268,13 @@ def iniciar_execucao_relatorio(
     with open(dest, "wb") as f:
         f.write(arquivo.file.read())
 
-    # Datas: usadas apenas para a janela DDA; default hoje
-    d_inicio = date.fromisoformat(data_inicio) if data_inicio else date.today()
-    d_fim = date.fromisoformat(data_fim) if data_fim else d_inicio
+    # Datas: usadas apenas para a janela DDA; default hoje -> +7 dias
+    from datetime import timedelta
+    try:
+        d_inicio = date.fromisoformat(data_inicio) if data_inicio else date.today()
+        d_fim = date.fromisoformat(data_fim) if data_fim else d_inicio + timedelta(days=7)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Datas inválidas — use o formato YYYY-MM-DD ou deixe em branco")
 
     def rotina_em_background():
         orchestrator.executar_ciclo(d_inicio, d_fim, iniciado_por="dashboard-relatorio", relatorio_path=dest)

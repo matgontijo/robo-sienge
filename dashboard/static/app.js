@@ -375,14 +375,10 @@ async function rodarComRelatorio(input) {
     const file = input.files && input.files[0];
     if (!file) return;
 
-    const di = prompt("Janela DDA - Data Início (YYYY-MM-DD)\n(usada só p/ buscar boletos; os títulos vêm do relatório)", new Date().toISOString().substring(0,10));
-    if (di === null) { input.value = ""; return; }
-    const df = prompt("Janela DDA - Data Fim (YYYY-MM-DD)", di) || di;
-
+    // Janela DDA automática (hoje → +7 dias, calculada no servidor);
+    // os títulos vêm do relatório enviado — sem perguntas.
     const fd = new FormData();
     fd.append("arquivo", file);
-    fd.append("data_inicio", di);
-    fd.append("data_fim", df);
 
     const btn = document.getElementById("btn-relatorio");
     const txtOriginal = btn.innerText;
