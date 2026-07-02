@@ -46,6 +46,10 @@ def decodificar_linha_digitavel(linha: str) -> Optional[dict]:
     vencimento = None
     if fator > 0:
         vencimento = _FEBRABAN_BASE + timedelta(days=fator)
+        # FEBRABAN reiniciou o fator em 22/02/2025 (fator 1000). Datas calculadas
+        # na base antiga que caem antes disso pertencem ao novo ciclo: +9000 dias.
+        if vencimento < date(2025, 2, 22):
+            vencimento += timedelta(days=9000)
     return {"valor": valor, "vencimento": vencimento}
 
 
