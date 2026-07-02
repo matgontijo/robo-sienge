@@ -80,6 +80,7 @@ class AttachmentReader:
         # execuções seguintes reutilizam o resultado (hash do PDF -> dados).
         self._cache_path = cache_path
         self._cache_disk_lock = threading.Lock()
+        self._tl = threading.local()  # marca falha de chamada p/ não cachear falso negativo
         self._carregar_cache_disco()
 
     # ------------------------------------------------------------------
@@ -271,6 +272,7 @@ REGRAS OBRIGATÓRIAS:
                 return texto or None
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Erro na chamada do Gemini (OCR): {e}")
+                self._tl.falha = True
                 return None
 
         # Anthropic (Claude Haiku)
@@ -291,6 +293,7 @@ REGRAS OBRIGATÓRIAS:
             return response.content[0].text.strip()
         except Exception as e:  # noqa: BLE001
             logger.error(f"Erro na chamada do Anthropic (Claude Vision): {e}")
+            self._tl.falha = True
             return None
 
     def _chamar_claude(self, image_bytes: bytes) -> Optional[str]:
@@ -336,6 +339,7 @@ REGRAS OBRIGATÓRIAS:
             return None
             
         # Itera por página (limitado para poupar cota do OCR)
+        self._tl.falha = False
         for i, img in enumerate(imagens[:self._MAX_PAGINAS_OCR]):
             logger.info(f"Enviando página {i+1}/{len(imagens)} para análise do OCR...")
             chave = self._chamar_claude(img)
@@ -349,6 +353,10 @@ REGRAS OBRIGATÓRIAS:
                 else:
                     logger.warning(f"Chave encontrada na página {i+1} porém é INVÁLIDA (Dígito verificador falhou): {chave}")
 
+        if getattr(self._tl, "falha", False):
+            # Falha de chamada (429/erro): não conclui "sem chave" — tenta no próximo ciclo
+            logger.warning("OCR falhou em alguma página; resultado não será cacheado.")
+            return None
         logger.warning("Não foi possível extrair chave válida de nenhuma das páginas do PDF.")
         self.cache[pdf_hash] = None
         self._salvar_cache_disco()
@@ -379,6 +387,7 @@ REGRAS OBRIGATÓRIAS:
         if pdf_hash in self.cache_boleto:
             return self.cache_boleto[pdf_hash]
 
+        self._tl.falha = False
         for i, img in enumerate(self._pdf_para_imagens(pdf_bytes)[:self._MAX_PAGINAS_OCR]):
             dados = self._chamar_claude_boleto(img)
             if not dados or not dados.get("tem_boleto"):
@@ -420,6 +429,9 @@ REGRAS OBRIGATÓRIAS:
             self._salvar_cache_disco()
             return boleto
 
+        if getattr(self._tl, "falha", False):
+            logger.warning("OCR de boleto falhou em alguma página; resultado não será cacheado.")
+            return None
         logger.info("Nenhum boleto detectado no anexo.")
         self.cache_boleto[pdf_hash] = None
         self._salvar_cache_disco()
