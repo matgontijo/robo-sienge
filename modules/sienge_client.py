@@ -169,6 +169,7 @@ class SiengeClient:
                 titulo.numero_documento = str(item.get("documentNumber") or "") or None
                 titulo.documento = (item.get("documentIdentificationId") or "").strip() or None
                 titulo.origem = item.get("originId")
+                titulo.credor_id = item.get("creditorId")
                 titulo.nf_chave_api = item.get("accessKeyNumber") or None
                 todos_titulos.append(titulo)
 
@@ -478,9 +479,12 @@ class SiengeClient:
                 resp = self._request_with_retry("GET", f"/bills/{int(num)}")
                 item = resp.json()
                 if item.get("id") is not None:
-                    # Aproveita a chave da NF-e que vem no próprio título
-                    if titulo is not None and item.get("accessKeyNumber"):
-                        titulo.nf_chave_api = titulo.nf_chave_api or str(item["accessKeyNumber"]).strip()
+                    # Aproveita chave da NF-e e credor que vêm no próprio título
+                    if titulo is not None:
+                        if item.get("accessKeyNumber"):
+                            titulo.nf_chave_api = titulo.nf_chave_api or str(item["accessKeyNumber"]).strip()
+                        if item.get("creditorId") is not None:
+                            titulo.credor_id = item["creditorId"]
                     logger.info(f"Título {numero}/{parcela} resolvido direto: /bills/{item['id']}")
                     return item["id"]
             except Exception as e:  # noqa: BLE001

@@ -21,6 +21,10 @@ SANTANDER_ENV = os.getenv("SANTANDER_ENV", "production")
 # Anthropic
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
+# Google Gemini (OCR alternativo, free tier)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
 # SEFAZ
 SEFAZ_CERT_PATH = os.getenv("SEFAZ_CERT_PATH", "./certs/empresa_a1.pfx")
 SEFAZ_CERT_PASSWORD = os.getenv("SEFAZ_CERT_PASSWORD")
@@ -107,7 +111,7 @@ def reload_config():
     load_dotenv(override=True)
     global SIENGE_BASE_URL, SIENGE_USERNAME, SIENGE_PASSWORD
     global SANTANDER_CLIENT_ID, SANTANDER_CLIENT_SECRET, SANTANDER_CERT_PATH, SANTANDER_CERT_PASSWORD, SANTANDER_ENV
-    global ANTHROPIC_API_KEY
+    global ANTHROPIC_API_KEY, GEMINI_API_KEY, GEMINI_MODEL
     global SEFAZ_CERT_PATH, SEFAZ_CERT_PASSWORD, SEFAZ_CNPJ, SEFAZ_AMBIENTE, SEFAZ_NSU_ULTIMO
     global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, NOTIF_EMAIL_DESTINO, TEAMS_WEBHOOK_URL
     global CRON_HORA, CRON_MINUTO
@@ -124,7 +128,9 @@ def reload_config():
     SANTANDER_ENV = os.getenv("SANTANDER_ENV", "production")
     
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
     SEFAZ_CERT_PATH = os.getenv("SEFAZ_CERT_PATH", "./certs/empresa_a1.pfx")
     SEFAZ_CERT_PASSWORD = os.getenv("SEFAZ_CERT_PASSWORD")
     SEFAZ_CNPJ = os.getenv("SEFAZ_CNPJ")

@@ -27,6 +27,9 @@ class Titulo:
     origem: Optional[str] = None               # coluna "Orig.": AC | CP | ME | CO
     data_referencia: Optional[date] = None     # data da linha no relatório (= data_vencimento)
 
+    # --- Cadastro do título no Sienge ---
+    credor_id: Optional[int] = None            # creditorId do /bills — referência anti-fraude
+
     # --- Campos da NF resolvidos pela API do Sienge (SiengeClient) ---
     nf_numero: Optional[str] = None
     nf_cnpj_emitente: Optional[str] = None

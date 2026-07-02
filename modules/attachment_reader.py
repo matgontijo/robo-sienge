@@ -1,5 +1,6 @@
 import io
 import re
+import time
 import json
 import hashlib
 import base64
@@ -7,6 +8,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 import fitz  # PyMuPDF
+import requests
 from loguru import logger
 import anthropic
 
@@ -45,8 +47,21 @@ def decodificar_linha_digitavel(linha: str) -> Optional[dict]:
 
 
 class AttachmentReader:
-    def __init__(self, anthropic_api_key: str):
-        self.client = anthropic.Anthropic(api_key=anthropic_api_key)
+    def __init__(self, anthropic_api_key: str = None, gemini_api_key: str = None,
+                 gemini_model: str = "gemini-2.5-flash"):
+        # Provedor de OCR: Gemini (gratuito) tem prioridade quando configurado;
+        # senão usa Anthropic (Claude Haiku). Sem nenhum, o robô segue sem OCR.
+        self.gemini_api_key = gemini_api_key or None
+        self.gemini_model = gemini_model
+        self.client = anthropic.Anthropic(api_key=anthropic_api_key) if anthropic_api_key else None
+        if self.gemini_api_key:
+            self.provider = "gemini"
+        elif self.client is not None:
+            self.provider = "anthropic"
+        else:
+            raise ValueError("Nenhuma API de OCR configurada (GEMINI_API_KEY ou ANTHROPIC_API_KEY).")
+        logger.info(f"OCR de anexos usando provedor: {self.provider}"
+                    + (f" ({self.gemini_model})" if self.provider == "gemini" else ""))
         self.cache = {}
         self.cache_boleto = {}
 
@@ -119,66 +134,97 @@ REGRAS OBRIGATÓRIAS:
             
         return imagens
 
-    def _chamar_claude(self, image_bytes: bytes) -> Optional[str]:
+    @staticmethod
+    def _limpar_markdown_json(content: str) -> str:
+        """Remove possível bloco de markdown ```json ... ``` em volta do JSON."""
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        return content.strip()
+
+    def _chamar_vision(self, image_bytes: bytes, system_prompt: str, user_text: str,
+                       max_tokens: int = 400) -> Optional[str]:
+        """Envia a imagem para o provedor de OCR configurado e retorna o texto bruto."""
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-        
+
+        if self.provider == "gemini":
+            url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+                   f"{self.gemini_model}:generateContent?key={self.gemini_api_key}")
+            body = {
+                "system_instruction": {"parts": [{"text": system_prompt}]},
+                "contents": [{"role": "user", "parts": [
+                    {"inline_data": {"mime_type": "image/png", "data": image_base64}},
+                    {"text": user_text},
+                ]}],
+                "generationConfig": {
+                    "maxOutputTokens": max(max_tokens, 1024),
+                    "temperature": 0,
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
+            }
+            try:
+                resp = requests.post(url, json=body, timeout=90)
+                if resp.status_code == 429:
+                    # Free tier: limite por minuto — espera e tenta 1x de novo
+                    logger.warning("Gemini 429 (rate limit do free tier); aguardando 30s...")
+                    time.sleep(30)
+                    resp = requests.post(url, json=body, timeout=90)
+                resp.raise_for_status()
+                data = resp.json()
+                parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+                texto = "".join(p.get("text", "") for p in parts).strip()
+                return texto or None
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Erro na chamada do Gemini (OCR): {e}")
+                return None
+
+        # Anthropic (Claude Haiku)
         try:
             response = self.client.messages.create(
-                model="claude-3-5-haiku-20241022", # Usando a versão real correspondente à intenção
-                max_tokens=300,
-                system=self.system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": image_base64,
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": "Extraia a chave de acesso desta imagem."
-                            }
-                        ],
-                    }
-                ],
+                model="claude-haiku-4-5-20251001",
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": "image/png", "data": image_base64}},
+                        {"type": "text", "text": user_text},
+                    ],
+                }],
             )
-            
-            content = response.content[0].text.strip()
-            
-            # Ocasionalmente o modelo pode retornar markdown ou texto antes/depois, tentar parsear direto
-            try:
-                # Remove possível bloco de markdown ```json ... ```
-                if content.startswith("```json"):
-                    content = content[7:]
-                if content.startswith("```"):
-                    content = content[3:]
-                if content.endswith("```"):
-                    content = content[:-3]
-                    
-                data = json.loads(content.strip())
-                
-                chave = data.get("chave")
-                if chave:
-                    # Remove espaços em branco, caso tenham vindo
-                    chave = chave.replace(" ", "")
-                
-                confianca = data.get("confianca")
-                motivo = data.get("motivo", "")
-                
-                logger.info(f"Retorno Claude | Confiança: {confianca} | Chave: {chave} | Motivo: {motivo}")
-                return chave
-                
-            except json.JSONDecodeError:
-                logger.warning(f"Erro ao parsear JSON do Claude. Retorno bruto: {content}")
-                return None
-                
-        except Exception as e:
+            return response.content[0].text.strip()
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Erro na chamada do Anthropic (Claude Vision): {e}")
+            return None
+
+    def _chamar_claude(self, image_bytes: bytes) -> Optional[str]:
+        content = self._chamar_vision(
+            image_bytes, self.system_prompt, "Extraia a chave de acesso desta imagem.",
+            max_tokens=300)
+        if not content:
+            return None
+
+        try:
+            data = json.loads(self._limpar_markdown_json(content))
+
+            chave = data.get("chave")
+            if chave:
+                # Remove espaços em branco, caso tenham vindo
+                chave = chave.replace(" ", "")
+
+            confianca = data.get("confianca")
+            motivo = data.get("motivo", "")
+
+            logger.info(f"Retorno OCR | Confiança: {confianca} | Chave: {chave} | Motivo: {motivo}")
+            return chave
+
+        except json.JSONDecodeError:
+            logger.warning(f"Erro ao parsear JSON do OCR. Retorno bruto: {content}")
             return None
 
     def extrair_chave_nfe(self, pdf_bytes: bytes) -> Optional[str]:
@@ -216,34 +262,15 @@ REGRAS OBRIGATÓRIAS:
         return None
 
     def _chamar_claude_boleto(self, image_bytes: bytes) -> Optional[dict]:
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-        try:
-            response = self.client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=400,
-                system=self.system_prompt_boleto,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {
-                            "type": "base64", "media_type": "image/png", "data": image_base64}},
-                        {"type": "text", "text": "Extraia os dados do boleto desta imagem."},
-                    ],
-                }],
-            )
-            content = response.content[0].text.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            return json.loads(content.strip())
-        except json.JSONDecodeError:
-            logger.warning("Boleto: retorno do Claude não é JSON válido.")
+        content = self._chamar_vision(
+            image_bytes, self.system_prompt_boleto,
+            "Extraia os dados do boleto desta imagem.", max_tokens=400)
+        if not content:
             return None
-        except Exception as e:
-            logger.error(f"Erro na chamada do Anthropic (boleto): {e}")
+        try:
+            return json.loads(self._limpar_markdown_json(content))
+        except json.JSONDecodeError:
+            logger.warning("Boleto: retorno do OCR não é JSON válido.")
             return None
 
     def extrair_boleto(self, pdf_bytes: bytes) -> Optional[Boleto]:

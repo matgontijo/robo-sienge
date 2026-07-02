@@ -47,7 +47,8 @@ class Reconciler:
         boleto_anexo: Optional[Boleto] = None,
         info_pagamento=None,
         impostos_destacados: Optional[dict] = None,
-        retencoes: Optional[dict] = None
+        retencoes: Optional[dict] = None,
+        dda_disponivel: bool = True
     ) -> List[Divergencia]:
         divergencias = []
         
@@ -138,8 +139,9 @@ class Reconciler:
                         boleto_encontrado = b
                         break
                         
-        # REGRA 4 - FORMA DE PAGAMENTO (Boleto)
-        if titulo.forma_pagamento and "BOLETO" in titulo.forma_pagamento.upper():
+        # REGRA 4 - FORMA DE PAGAMENTO (Boleto) — só quando o DDA está configurado;
+        # sem Santander, "nenhum boleto DDA encontrado" é o esperado, não divergência
+        if dda_disponivel and titulo.forma_pagamento and "BOLETO" in titulo.forma_pagamento.upper():
             if not boleto_encontrado:
                 divergencias.append(Divergencia(
                     titulo_id=titulo.id,

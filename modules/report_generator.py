@@ -12,6 +12,7 @@ class ReportGenerator:
         self.fill_header = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
         self.fill_critica = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
         self.fill_atencao = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        self.fill_ok = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         self.font_bold = Font(bold=True)
         self.font_link = Font(color="0563C1", underline="single")
 
@@ -21,20 +22,26 @@ class ReportGenerator:
         titulos_ok: List[Titulo],
         titulos_erro: List[Tuple[Titulo, str]], # Titulo e motivo do erro
         data_referencia: date,
-        output_dir: str
+        output_dir: str,
+        pagamentos: List[dict] = None
     ) -> str:
-        
+
         wb = Workbook()
-        
+
         # Aba Divergncias
         ws_div = wb.active
         ws_div.title = "Divergências"
         self._preencher_aba_divergencias(ws_div, divergencias)
-        
+
+        # Aba Pagamentos (destino cadastrado na parcela x CNPJ do credor)
+        if pagamentos:
+            ws_pag = wb.create_sheet(title="Pagamentos")
+            self._preencher_aba_pagamentos(ws_pag, pagamentos)
+
         # Aba Conferidos OK
         ws_ok = wb.create_sheet(title="Conferidos OK")
         self._preencher_aba_ok(ws_ok, titulos_ok)
-        
+
         # Aba No Processados
         ws_err = wb.create_sheet(title="Não Processados")
         self._preencher_aba_erro(ws_err, titulos_erro)
@@ -122,6 +129,47 @@ class ReportGenerator:
         ws.auto_filter.ref = f"A1:M{row_num - 1}"
         
         # Auto ajuste
+        self._auto_fit_columns(ws)
+
+    def _preencher_aba_pagamentos(self, ws, pagamentos):
+        """Dados de pagamento da parcela (aba Inf. Pagamento do Sienge) e o
+        confronto do destino (chave Pix / conta TED) com o CNPJ do credor."""
+        headers = [
+            "Nº Título", "Parcela", "Fornecedor", "CNPJ Credor (cadastro)",
+            "Forma Pagamento", "Valor Parcela", "Vencimento",
+            "Tipo Chave Pix", "Chave Pix", "Banco", "Agência", "Conta",
+            "Titular/Beneficiário", "CNPJ Destino", "Linha Digitável",
+            "Confronto CNPJ"
+        ]
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.fill = self.fill_header
+            cell.font = self.font_bold
+
+        row_num = 2
+        for p in pagamentos:
+            ws.append([
+                p.get("numero"), p.get("parcela"), p.get("fornecedor"),
+                p.get("cnpj_credor"), p.get("forma"), p.get("valor"),
+                str(p.get("vencimento") or ""), p.get("tipo_chave_pix"),
+                p.get("chave_pix"), p.get("banco"), p.get("agencia"),
+                p.get("conta"), p.get("titular"), p.get("cnpj_destino"),
+                p.get("linha_digitavel"), p.get("confronto"),
+            ])
+            confronto = str(p.get("confronto") or "")
+            fill = None
+            if confronto == "DIVERGENTE":
+                fill = self.fill_critica
+            elif confronto == "OK":
+                fill = self.fill_ok
+            elif confronto.startswith("NAO"):
+                fill = self.fill_atencao
+            if fill:
+                for col in range(1, len(headers) + 1):
+                    ws.cell(row=row_num, column=col).fill = fill
+            row_num += 1
+
+        ws.auto_filter.ref = f"A1:P{row_num - 1}"
         self._auto_fit_columns(ws)
 
     def _preencher_aba_ok(self, ws, titulos):

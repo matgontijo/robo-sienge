@@ -117,6 +117,15 @@ def processar_titulo(
                 titulo.forma_pagamento = info_pagamento.forma_pagamento
             retencoes = sienge_cli.consultar_impostos_titulo(titulo.id) or {}
 
+        # a.3 CNPJ do credor cadastrado no título (/creditors) — referência oficial
+        # para o confronto do destino do pagamento (TED/Pix) x credor
+        if from_report and sienge_cli is not None and titulo.credor_id and not titulo.fornecedor_cnpj:
+            credor = sienge_cli.consultar_credor(credor_id=titulo.credor_id)
+            if credor:
+                titulo.fornecedor_cnpj = credor.get("cnpj") or credor.get("cpf") or ""
+                if not titulo.fornecedor_nome:
+                    titulo.fornecedor_nome = credor.get("name") or credor.get("tradeName") or ""
+
         # b. Nota fiscal via NF-e de Produto (/nfes) — fonte primária (substitui Sefaz)
         if from_report and sienge_cli is not None:
             res_nfe = sienge_cli.resolver_nfe_produto_para_titulo(titulo, data_inicio, data_fim)
@@ -193,7 +202,9 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
 
         sienge_cli = _init_cliente("sienge", lambda: SiengeClient(
             config.SIENGE_BASE_URL, config.SIENGE_USERNAME, config.SIENGE_PASSWORD))
-        reader = _init_cliente("ocr", lambda: AttachmentReader(config.ANTHROPIC_API_KEY))
+        reader = _init_cliente("ocr", lambda: AttachmentReader(
+            config.ANTHROPIC_API_KEY, gemini_api_key=config.GEMINI_API_KEY,
+            gemini_model=config.GEMINI_MODEL))
         sefaz_cli = _init_cliente("sefaz", lambda: SefazClient(
             config.SEFAZ_CERT_PATH, config.SEFAZ_CERT_PASSWORD, config.SEFAZ_CNPJ, config.SEFAZ_AMBIENTE))
         danfe_gen = DanfeGenerator()
@@ -266,9 +277,15 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
         divergencias_finais = []
         titulos_ok = []
         titulos_erro = []
+        pagamentos_rows = []
         total_divergencias = 0
         total_criticos = 0
-        
+        dda_disponivel = santander_cli is not None
+
+        def _digitos(v):
+            import re as _re
+            return _re.sub(r"\D", "", str(v or ""))
+
         for r in resultados_processamento:
             t = r["titulo"]
             erro = r["erro"]
@@ -278,6 +295,33 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             retencoes = r.get("retencoes") or {}
             destacados = r.get("destacados") or {}
 
+            # Aba "Pagamentos": destino cadastrado na parcela x CNPJ do credor
+            if info_pagamento is not None:
+                cnpj_credor = _digitos(t.fornecedor_cnpj)
+                cnpj_destino = _digitos(info_pagamento.cnpj_destino())
+                if cnpj_destino and cnpj_credor:
+                    confronto = "OK" if cnpj_destino == cnpj_credor else "DIVERGENTE"
+                elif info_pagamento.linha_digitavel:
+                    confronto = "BOLETO (beneficiário via DDA/anexo)"
+                else:
+                    confronto = "NAO VERIFICAVEL"
+                pagamentos_rows.append({
+                    "numero": t.numero, "parcela": info_pagamento.parcela or t.parcela,
+                    "fornecedor": t.fornecedor_nome, "cnpj_credor": t.fornecedor_cnpj,
+                    "forma": info_pagamento.forma_pagamento,
+                    "valor": info_pagamento.valor,
+                    "vencimento": info_pagamento.vencimento,
+                    "tipo_chave_pix": info_pagamento.tipo_chave_pix,
+                    "chave_pix": info_pagamento.chave_pix,
+                    "banco": info_pagamento.banco, "agencia": info_pagamento.agencia,
+                    "conta": info_pagamento.conta,
+                    "titular": info_pagamento.titular_nome or info_pagamento.beneficiario_nome,
+                    "cnpj_destino": info_pagamento.beneficiario_cnpj or info_pagamento.titular_cnpj
+                                    or (info_pagamento.chave_pix if (info_pagamento.tipo_chave_pix or "").upper() == "CNPJ" else None),
+                    "linha_digitavel": info_pagamento.linha_digitavel,
+                    "confronto": confronto,
+                })
+
             if erro:
                 titulos_erro.append((t, erro))
                 continue
@@ -286,6 +330,7 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                 t, nfe, boletos_dda, boleto_anexo,
                 info_pagamento=info_pagamento,
                 impostos_destacados=destacados, retencoes=retencoes,
+                dda_disponivel=dda_disponivel,
             )
             if not divs:
                 titulos_ok.append(t)
@@ -320,7 +365,8 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             titulos_ok=titulos_ok,
             titulos_erro=titulos_erro,
             data_referencia=data_fim,
-            output_dir=config.OUTPUT_DIR
+            output_dir=config.OUTPUT_DIR,
+            pagamentos=pagamentos_rows
         )
         
         # Notificação
