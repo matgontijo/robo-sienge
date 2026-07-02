@@ -12,6 +12,7 @@ class InfoPagamento:
     """
     forma_pagamento: str = ""                      # ex.: "Boleto Bancário Outros Bancos", "PIX", "TED"
     parcela: Optional[str] = None
+    total_parcelas: Optional[int] = None           # qtd de parcelas do título (p/ rateio de retenções)
     valor: Optional[float] = None
     vencimento: Optional[date] = None
 

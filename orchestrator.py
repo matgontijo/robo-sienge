@@ -311,6 +311,18 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                     confronto = "BOLETO (beneficiário via DDA/anexo)"
                 else:
                     confronto = "NAO VERIFICAVEL"
+
+                # Banco emissor e valor embutidos na linha digitável (FEBRABAN)
+                from modules.attachment_reader import decodificar_linha_digitavel
+                from modules.reconciler import _BANCOS
+                banco_boleto = valor_boleto = None
+                linha_dig = _digitos(info_pagamento.linha_digitavel)
+                if len(linha_dig) >= 3:
+                    cod = linha_dig[:3]
+                    banco_boleto = f"{cod} - {_BANCOS.get(cod, 'outro')}"
+                    dec = decodificar_linha_digitavel(linha_dig)
+                    if dec and dec.get("valor"):
+                        valor_boleto = dec["valor"]
                 pagamentos_rows.append({
                     "numero": t.numero, "parcela": info_pagamento.parcela or t.parcela,
                     "fornecedor": t.fornecedor_nome, "cnpj_credor": t.fornecedor_cnpj,
@@ -325,6 +337,8 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                     "cnpj_destino": info_pagamento.beneficiario_cnpj or info_pagamento.titular_cnpj
                                     or (info_pagamento.chave_pix if (info_pagamento.tipo_chave_pix or "").upper() == "CNPJ" else None),
                     "linha_digitavel": info_pagamento.linha_digitavel,
+                    "banco_boleto": banco_boleto,
+                    "valor_boleto": valor_boleto,
                     "confronto": confronto,
                 })
 

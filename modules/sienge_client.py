@@ -577,6 +577,7 @@ class SiengeClient:
         info = InfoPagamento(
             forma_pagamento=str(alvo.get("paymentType") or ""),
             parcela=str(n_parcela) if n_parcela is not None else parcela,
+            total_parcelas=len(parcelas),
         )
         if alvo.get("amount") is not None:
             info.valor = float(alvo["amount"])

@@ -139,6 +139,7 @@ class ReportGenerator:
             "Forma Pagamento", "Valor Parcela", "Vencimento",
             "Tipo Chave Pix", "Chave Pix", "Banco", "Agência", "Conta",
             "Titular/Beneficiário", "CNPJ Destino", "Linha Digitável",
+            "Banco do Boleto", "Valor Boleto (linha)",
             "Confronto CNPJ"
         ]
         ws.append(headers)
@@ -154,7 +155,8 @@ class ReportGenerator:
                 str(p.get("vencimento") or ""), p.get("tipo_chave_pix"),
                 p.get("chave_pix"), p.get("banco"), p.get("agencia"),
                 p.get("conta"), p.get("titular"), p.get("cnpj_destino"),
-                p.get("linha_digitavel"), p.get("confronto"),
+                p.get("linha_digitavel"), p.get("banco_boleto"),
+                p.get("valor_boleto"), p.get("confronto"),
             ])
             confronto = str(p.get("confronto") or "")
             fill = None
@@ -169,7 +171,7 @@ class ReportGenerator:
                     ws.cell(row=row_num, column=col).fill = fill
             row_num += 1
 
-        ws.auto_filter.ref = f"A1:P{row_num - 1}"
+        ws.auto_filter.ref = f"A1:R{row_num - 1}"
         self._auto_fit_columns(ws)
 
     def _preencher_aba_ok(self, ws, titulos):

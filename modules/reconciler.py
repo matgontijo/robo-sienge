@@ -5,6 +5,16 @@ import re
 from loguru import logger
 
 from models import Titulo, NFeData, Boleto
+from modules.attachment_reader import decodificar_linha_digitavel
+
+# Bancos mais comuns (código FEBRABAN -> nome) p/ mensagens amigáveis
+_BANCOS = {"001": "Banco do Brasil", "033": "Santander", "104": "Caixa",
+           "237": "Bradesco", "341": "Itaú", "756": "Sicoob", "748": "Sicredi",
+           "077": "Inter", "260": "Nubank", "336": "C6", "212": "Original",
+           "422": "Safra", "745": "Citibank", "399": "HSBC", "041": "Banrisul"}
+
+# Código do banco de onde saem os pagamentos (boleto "próprio banco")
+BANCO_CASA = "033"  # Santander
 
 @dataclass
 class Divergencia:
@@ -180,6 +190,10 @@ class Reconciler:
         if info_pagamento is not None:
             divergencias.extend(
                 self._reconciliar_pagamento(titulo, nfe_data, info_pagamento, boleto_anexo))
+            divergencias.extend(
+                self._reconciliar_linha_digitavel(titulo, info_pagamento))
+            divergencias.extend(
+                self._reconciliar_liquido_parcela(titulo, info_pagamento, retencoes or {}))
 
         # CONFERÊNCIA DE IMPOSTOS / RETENÇÕES
         if impostos_destacados or retencoes:
@@ -187,6 +201,105 @@ class Reconciler:
                 self._reconciliar_impostos(titulo, nfe_data, impostos_destacados or {}, retencoes or {}))
 
         return divergencias
+
+    def _reconciliar_linha_digitavel(self, titulo: Titulo, info) -> List[Divergencia]:
+        """
+        Conferências determinísticas pela linha digitável do boleto cadastrado
+        na parcela (sem OCR):
+          1. Banco emissor (3 primeiros dígitos): boleto do Santander (033) tem
+             que estar cadastrado como boleto do PRÓPRIO banco, e boleto de
+             outro banco como OUTROS bancos — senão a remessa é recusada/tarifada.
+          2. Valor embutido na linha digitável x valor a pagar do título.
+          3. Vencimento embutido x vencimento do título.
+        """
+        divs: List[Divergencia] = []
+        linha = re.sub(r"\D", "", str(info.linha_digitavel or ""))
+        if not linha:
+            return divs
+
+        forma = (info.forma_pagamento or "").upper()
+
+        # 1) Banco do boleto x forma de pagamento (próprio banco x outros bancos)
+        if len(linha) >= 3 and "BOLETO" in forma and "CONCESSION" not in forma:
+            banco = linha[:3]
+            nome_banco = _BANCOS.get(banco, f"banco {banco}")
+            forma_proprio = any(k in forma for k in ("SANTANDER", "MESMO BANCO", "PROPRIO", "PRÓPRIO"))
+            if banco == BANCO_CASA and not forma_proprio:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="BOLETO_BANCO_INCOMPATIVEL",
+                    campo="Banco do Boleto",
+                    valor_sienge=f"Forma: {info.forma_pagamento}",
+                    valor_nfe="-",
+                    valor_boleto=f"Boleto é do Santander (033) — cadastrar como boleto do PRÓPRIO banco",
+                    criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                ))
+            elif banco != BANCO_CASA and forma_proprio:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="BOLETO_BANCO_INCOMPATIVEL",
+                    campo="Banco do Boleto",
+                    valor_sienge=f"Forma: {info.forma_pagamento}",
+                    valor_nfe="-",
+                    valor_boleto=f"Boleto é do {nome_banco} — cadastrar como boleto de OUTROS bancos",
+                    criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                ))
+
+        # 2/3) Valor e vencimento embutidos na linha digitável (padrão FEBRABAN)
+        dec = decodificar_linha_digitavel(linha)
+        if dec:
+            valor_boleto = dec.get("valor")
+            venc_boleto = dec.get("vencimento")
+            if valor_boleto and titulo.valor_liquido and abs(valor_boleto - titulo.valor_liquido) > 0.05:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="BOLETO_VALOR_DIVERGENTE",
+                    campo="Valor do Boleto (linha digitável)",
+                    valor_sienge=f"{titulo.valor_liquido:.2f}",
+                    valor_nfe="-",
+                    valor_boleto=f"{valor_boleto:.2f}",
+                    criticidade="CRITICA", danfe_path=titulo.danfe_path,
+                ))
+            if venc_boleto and titulo.data_vencimento and abs((venc_boleto - titulo.data_vencimento).days) > 1:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="BOLETO_VENCIMENTO_DIVERGENTE",
+                    campo="Vencimento do Boleto (linha digitável)",
+                    valor_sienge=str(titulo.data_vencimento),
+                    valor_nfe="-",
+                    valor_boleto=str(venc_boleto),
+                    criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                ))
+        return divs
+
+    def _reconciliar_liquido_parcela(self, titulo: Titulo, info, retencoes: dict) -> List[Divergencia]:
+        """
+        Conta do líquido SEM depender da NF: parcela bruta (API do Sienge)
+        menos TODAS as retenções lançadas no título (INSS, ISS, IR, CAUÇÃO...)
+        tem que bater com o valor a pagar do fluxo de caixa.
+        Só confere títulos de parcela única — com várias parcelas o rateio
+        das retenções é ambíguo.
+        """
+        divs: List[Divergencia] = []
+        if not info.valor or not titulo.valor_liquido:
+            return divs
+        if info.total_parcelas and info.total_parcelas > 1:
+            return divs
+
+        total_retido = sum(float(v or 0) for v in (retencoes or {}).values())
+        liquido_esperado = float(info.valor) - total_retido
+        if abs(liquido_esperado - titulo.valor_liquido) > 0.05:
+            detalhe = " + ".join(f"{k} {float(v or 0):.2f}" for k, v in (retencoes or {}).items()) or "sem retenções"
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="LIQUIDO_PARCELA_DIVERGENTE",
+                campo="Parcela - Retenções x Valor a Pagar",
+                valor_sienge=f"a pagar {titulo.valor_liquido:.2f}",
+                valor_nfe="-",
+                valor_boleto=f"parcela {float(info.valor):.2f} - ({detalhe}) = {liquido_esperado:.2f}",
+                criticidade="CRITICA", danfe_path=titulo.danfe_path,
+            ))
+        return divs
 
     def _cnpj_fornecedor_ref(self, titulo: Titulo, nfe_data: Optional[NFeData]) -> str:
         """CNPJ de referência do fornecedor (título -> NF)."""
