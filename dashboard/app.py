@@ -80,6 +80,22 @@ def obter_execucao(execucao_id: int):
 def listar_divergencias(execucao_id: int, criticidade: str = None, q: str = None):
     return db.get_divergencias(execucao_id, criticidade, q)
 
+class RevisaoPayload(BaseModel):
+    status: str  # PENDENTE | APROVADO | REJEITADO
+    observacao: Optional[str] = None
+
+@app.post("/api/divergencias/{divergencia_id}/revisao")
+def revisar_divergencia(divergencia_id: int, payload: RevisaoPayload,
+                        user=Depends(get_current_user)):
+    status_norm = (payload.status or "").upper()
+    if status_norm not in ("PENDENTE", "APROVADO", "REJEITADO"):
+        raise HTTPException(status_code=400, detail="status deve ser PENDENTE, APROVADO ou REJEITADO")
+    d = db.atualizar_revisao(divergencia_id, status_norm, payload.observacao,
+                             getattr(user, "username", None))
+    if not d:
+        raise HTTPException(status_code=404, detail="Divergência não encontrada")
+    return d
+
 @app.get("/api/execucoes/{execucao_id}/logs", dependencies=[Depends(get_current_user)])
 def listar_logs(execucao_id: int):
     return db.get_logs(execucao_id)

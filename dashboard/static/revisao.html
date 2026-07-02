@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revisão de Divergências | Robô de Conferência</title>
+<style>
+    :root {
+        --ink:#14202b; --muted:#5b6b7a; --line:#e3e9ef; --bg:#f6f8fa; --card:#fff;
+        --ok:#1e8e5a; --ok-bg:#e7f6ee; --warn:#b47d00; --warn-bg:#fdf3dc;
+        --crit:#c0392b; --crit-bg:#fdeceb; --accent:#0b5fff; --accent-bg:#eaf1ff;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:"Segoe UI",system-ui,Arial,sans-serif; background:var(--bg); color:var(--ink);
+           line-height:1.5; padding:24px 20px 80px; }
+    .wrap { max-width:1100px; margin:0 auto; }
+
+    .topo { display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;
+            background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 22px; margin-bottom:16px; }
+    .topo h1 { font-size:20px; font-weight:800; }
+    .topo .sub { font-size:13px; color:var(--muted); }
+    select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+
+    .progresso { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 22px; margin-bottom:16px; }
+    .barra { height:10px; background:#e9eef4; border-radius:999px; overflow:hidden; margin-top:8px; }
+    .barra > div { height:100%; background:linear-gradient(90deg,var(--ok),#39c07f); width:0%; transition:width .3s; }
+    .progresso .txt { font-size:13.5px; color:var(--muted); }
+
+    .filtros { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; align-items:center; }
+    .chip { border:1px solid var(--line); background:#fff; padding:6px 14px; border-radius:999px;
+            font-size:13px; cursor:pointer; user-select:none; }
+    .chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+    #busca { flex:1; min-width:200px; padding:8px 12px; border:1px solid var(--line); border-radius:999px; font-size:13.5px; }
+
+    .titulo-card { background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:14px; overflow:hidden; }
+    .titulo-head { display:flex; flex-wrap:wrap; gap:10px 22px; align-items:center; padding:14px 20px;
+                   background:#f0f4f8; border-bottom:1px solid var(--line); }
+    .titulo-head b { font-size:15px; }
+    .titulo-head .m { font-size:13px; color:var(--muted); }
+    .titulo-head .spacer { flex:1; }
+    button { border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; }
+    .bt-aprovar { background:var(--ok-bg); color:var(--ok); }
+    .bt-aprovar:hover { background:#d3efdf; }
+    .bt-rejeitar { background:var(--crit-bg); color:var(--crit); }
+    .bt-rejeitar:hover { background:#fbdbd8; }
+    .bt-reabrir { background:#eef2f6; color:var(--muted); }
+    .bt-tudo { background:var(--accent-bg); color:var(--accent); }
+
+    .div-row { display:flex; flex-wrap:wrap; gap:10px 16px; padding:14px 20px; border-bottom:1px solid var(--line);
+               align-items:flex-start; }
+    .div-row:last-child { border-bottom:none; }
+    .div-row.APROVADO { background:#f4fbf7; }
+    .div-row.REJEITADO { background:#fdf5f4; }
+    .div-info { flex:1 1 380px; }
+    .div-info .tipo { font-weight:700; font-size:14px; }
+    .div-info .valores { font-size:13px; color:#33424f; margin-top:4px; }
+    .div-info .valores span { display:inline-block; margin-right:14px; }
+    .badge { display:inline-block; font-size:11px; font-weight:800; padding:2px 9px; border-radius:999px; margin-left:8px; vertical-align:middle; }
+    .b-crit { background:var(--crit-bg); color:var(--crit); }
+    .b-warn { background:var(--warn-bg); color:var(--warn); }
+    .b-ok { background:var(--ok-bg); color:var(--ok); }
+    .b-cinza { background:#eef2f6; color:var(--muted); }
+    .div-acoes { display:flex; flex-direction:column; gap:8px; align-items:flex-end; min-width:230px; }
+    .div-acoes .linha-bt { display:flex; gap:8px; }
+    .obs { width:230px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; font-size:12.5px; }
+    .quem { font-size:11.5px; color:var(--muted); }
+
+    #vazio { text-align:center; color:var(--muted); padding:50px 0; display:none; }
+    .toast { position:fixed; bottom:22px; right:22px; background:var(--ink); color:#fff; padding:12px 20px;
+             border-radius:10px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
+    .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="topo">
+        <div>
+            <h1>🔎 Revisão de Divergências</h1>
+            <div class="sub" id="sub">Analise cada apontamento e aprove ou rejeite antes da remessa.</div>
+        </div>
+        <div>
+            <label class="sub" for="sel-exec">Ciclo:&nbsp;</label>
+            <select id="sel-exec"></select>
+        </div>
+    </div>
+
+    <div class="progresso">
+        <div class="txt" id="prog-txt">–</div>
+        <div class="barra"><div id="prog-bar"></div></div>
+    </div>
+
+    <div class="filtros">
+        <span class="chip on" data-f="TODAS">Todas</span>
+        <span class="chip" data-f="PENDENTE">Pendentes</span>
+        <span class="chip" data-f="CRITICA">Críticas</span>
+        <span class="chip" data-f="ATENCAO">Atenção</span>
+        <span class="chip" data-f="APROVADO">Aprovadas</span>
+        <span class="chip" data-f="REJEITADO">Rejeitadas</span>
+        <input id="busca" placeholder="Buscar por fornecedor, nº do título ou tipo...">
+    </div>
+
+    <div id="lista"></div>
+    <div id="vazio">Nada aqui com esse filtro. 🎉</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const NOMES = {
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Destino do pagamento ≠ CNPJ do credor",
+    "CNPJ_DIVERGENTE": "CNPJ da nota ≠ credor do título",
+    "VALOR_DIVERGENTE": "Valor do título ≠ valor da nota",
+    "LIQUIDO_BRUTO_DIVERGENTE": "Líquido ≠ bruto − retenções (via NF)",
+    "LIQUIDO_PARCELA_DIVERGENTE": "Parcela − retenções (caução/INSS…) ≠ valor a pagar",
+    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto (linha digitável) ≠ valor a pagar",
+    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto ≠ forma de pagamento (próprio/outros)",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto ≠ vencimento do título",
+    "IMPOSTO_DIVERGENTE": "Imposto retido ≠ destacado na nota",
+    "CHAVE_NFE_INVALIDA": "Chave de NF-e inválida",
+    "BOLETO_NAO_ENCONTRADO": "Boleto não encontrado no DDA",
+    "SEM_ANEXO": "Título sem anexo no Sienge",
+    "ANEXO_ILEGIVEL": "Anexo não lido (OCR pendente)",
+    "PIX_NAO_VERIFICAVEL": "Chave Pix não verificável (e-mail/telefone)",
+    "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
+    "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
+};
+
+let TOK = sessionStorage.getItem("auth_token");
+let DIVS = [];
+let FILTRO = "TODAS";
+let BUSCA = "";
+
+const H = () => ({ "Authorization": "Basic " + TOK, "Content-Type": "application/json" });
+
+function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+async function init() {
+    if (!TOK) {
+        const u = prompt("Usuário do painel:"), p = prompt("Senha:");
+        if (!u) return;
+        TOK = btoa(u + ":" + p);
+        sessionStorage.setItem("auth_token", TOK);
+    }
+    const r = await fetch("/api/execucoes?limit=15", { headers: H() });
+    if (r.status === 401) { sessionStorage.removeItem("auth_token"); TOK = null; return init(); }
+    const execs = (await r.json()).filter(e => e.status === "CONCLUIDO");
+    const sel = document.getElementById("sel-exec");
+    sel.innerHTML = "";
+    execs.forEach(e => {
+        const o = document.createElement("option");
+        o.value = e.id;
+        o.textContent = "#" + e.id + " · " + (e.iniciado_em || "").replace("T", " ").slice(0, 16) +
+            " · " + (e.total_titulos ?? "?") + " títulos";
+        sel.appendChild(o);
+    });
+    sel.onchange = () => carregar(sel.value);
+    if (execs.length) carregar(execs[0].id);
+    else document.getElementById("sub").textContent = "Nenhum ciclo concluído ainda.";
+}
+
+async function carregar(execId) {
+    const r = await fetch("/api/execucoes/" + execId + "/divergencias", { headers: H() });
+    DIVS = await r.json();
+    DIVS.forEach(d => { if (!d.status_revisao) d.status_revisao = "PENDENTE"; });
+    render();
+}
+
+function passaFiltro(d) {
+    const st = d.status_revisao || "PENDENTE";
+    if (FILTRO === "PENDENTE" && st !== "PENDENTE") return false;
+    if (FILTRO === "APROVADO" && st !== "APROVADO") return false;
+    if (FILTRO === "REJEITADO" && st !== "REJEITADO") return false;
+    if (FILTRO === "CRITICA" && d.criticidade !== "CRITICA") return false;
+    if (FILTRO === "ATENCAO" && d.criticidade !== "ATENCAO") return false;
+    if (BUSCA) {
+        const alvo = ((d.fornecedor_nome || "") + " " + (d.titulo_numero || "") + " " +
+            (d.tipo || "") + " " + (NOMES[d.tipo] || "")).toLowerCase();
+        if (!alvo.includes(BUSCA)) return false;
+    }
+    return true;
+}
+
+function render() {
+    const revisadas = DIVS.filter(d => (d.status_revisao || "PENDENTE") !== "PENDENTE").length;
+    const pct = DIVS.length ? Math.round(100 * revisadas / DIVS.length) : 0;
+    document.getElementById("prog-bar").style.width = pct + "%";
+    document.getElementById("prog-txt").textContent =
+        revisadas + " de " + DIVS.length + " apontamentos revisados (" + pct + "%) · " +
+        DIVS.filter(d => d.criticidade === "CRITICA" && (d.status_revisao || "PENDENTE") === "PENDENTE").length +
+        " críticas pendentes";
+
+    const visiveis = DIVS.filter(passaFiltro);
+    const porTitulo = {};
+    visiveis.forEach(d => {
+        const k = d.titulo_numero || "?";
+        (porTitulo[k] = porTitulo[k] || []).push(d);
+    });
+
+    const lista = document.getElementById("lista");
+    lista.innerHTML = "";
+    document.getElementById("vazio").style.display = visiveis.length ? "none" : "";
+
+    Object.entries(porTitulo).forEach(([num, divs]) => {
+        const d0 = divs[0];
+        const card = document.createElement("div");
+        card.className = "titulo-card";
+
+        const head = document.createElement("div");
+        head.className = "titulo-head";
+        head.innerHTML =
+            "<b>Título " + num + "</b>" +
+            "<span class='m'>" + (d0.fornecedor_nome || "") + "</span>" +
+            (d0.fornecedor_cnpj ? "<span class='m'>CNPJ " + d0.fornecedor_cnpj + "</span>" : "") +
+            (d0.valor_sienge ? "<span class='m'>R$ " + Number(d0.valor_sienge).toLocaleString("pt-BR", {minimumFractionDigits: 2}) + "</span>" : "") +
+            (d0.data_vencimento ? "<span class='m'>venc. " + d0.data_vencimento + "</span>" : "") +
+            "<span class='spacer'></span>";
+        const btTudo = document.createElement("button");
+        btTudo.className = "bt-tudo";
+        btTudo.textContent = "✓ Aprovar título inteiro";
+        btTudo.onclick = () => divs.forEach(d => salvar(d, "APROVADO", null, true));
+        head.appendChild(btTudo);
+        card.appendChild(head);
+
+        divs.forEach(d => card.appendChild(linha(d)));
+        lista.appendChild(card);
+    });
+}
+
+function linha(d) {
+    const st = d.status_revisao || "PENDENTE";
+    const row = document.createElement("div");
+    row.className = "div-row " + st;
+
+    const info = document.createElement("div");
+    info.className = "div-info";
+    const badgeCrit = d.criticidade === "CRITICA"
+        ? "<span class='badge b-crit'>CRÍTICA</span>" : "<span class='badge b-warn'>ATENÇÃO</span>";
+    const badgeSt = st === "APROVADO" ? "<span class='badge b-ok'>APROVADO</span>"
+        : st === "REJEITADO" ? "<span class='badge b-crit'>REJEITADO</span>"
+        : "<span class='badge b-cinza'>PENDENTE</span>";
+    info.innerHTML =
+        "<div class='tipo'>" + (NOMES[d.tipo] || d.tipo) + badgeCrit + badgeSt + "</div>" +
+        "<div class='valores'>" +
+        (d.campo ? "<span>📌 " + d.campo + "</span>" : "") +
+        (d.valor_sienge_campo ? "<span><b>Sienge:</b> " + d.valor_sienge_campo + "</span>" : "") +
+        (d.valor_nfe_campo && d.valor_nfe_campo !== "-" ? "<span><b>NF:</b> " + d.valor_nfe_campo + "</span>" : "") +
+        (d.valor_boleto_campo && d.valor_boleto_campo !== "-" ? "<span><b>Verificado:</b> " + d.valor_boleto_campo + "</span>" : "") +
+        "</div>" +
+        (d.revisado_por ? "<div class='quem'>revisado por " + d.revisado_por +
+            (d.revisado_em ? " em " + String(d.revisado_em).replace("T", " ").slice(0, 16) : "") + "</div>" : "");
+    row.appendChild(info);
+
+    const acoes = document.createElement("div");
+    acoes.className = "div-acoes";
+    const obs = document.createElement("input");
+    obs.className = "obs";
+    obs.placeholder = "Observação (opcional)...";
+    obs.value = d.observacao_revisao || "";
+    acoes.appendChild(obs);
+
+    const bts = document.createElement("div");
+    bts.className = "linha-bt";
+    if (st === "PENDENTE") {
+        const ap = document.createElement("button");
+        ap.className = "bt-aprovar"; ap.textContent = "✓ Aprovar";
+        ap.onclick = () => salvar(d, "APROVADO", obs.value);
+        const rj = document.createElement("button");
+        rj.className = "bt-rejeitar"; rj.textContent = "✗ Rejeitar";
+        rj.onclick = () => salvar(d, "REJEITADO", obs.value);
+        bts.appendChild(ap); bts.appendChild(rj);
+    } else {
+        const re = document.createElement("button");
+        re.className = "bt-reabrir"; re.textContent = "↩ Reabrir";
+        re.onclick = () => salvar(d, "PENDENTE", obs.value);
+        bts.appendChild(re);
+    }
+    acoes.appendChild(bts);
+    row.appendChild(acoes);
+    return row;
+}
+
+async function salvar(d, status, observacao, silencioso) {
+    try {
+        const r = await fetch("/api/divergencias/" + d.id + "/revisao", {
+            method: "POST", headers: H(),
+            body: JSON.stringify({ status: status, observacao: observacao || d.observacao_revisao || null }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const novo = await r.json();
+        Object.assign(d, novo);
+        if (!silencioso) toast(status === "APROVADO" ? "Aprovado ✓" : status === "REJEITADO" ? "Rejeitado ✗" : "Reaberto");
+        render();
+    } catch (e) {
+        toast("Erro ao salvar — verifique o login.");
+    }
+}
+
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => {
+    document.querySelectorAll(".chip").forEach(x => x.classList.remove("on"));
+    c.classList.add("on");
+    FILTRO = c.dataset.f;
+    render();
+});
+document.getElementById("busca").oninput = (e) => { BUSCA = e.target.value.toLowerCase(); render(); };
+
+init();
+</script>
+</body>
+</html>

@@ -61,6 +61,12 @@ class Divergencia(Base):
     danfe_path = Column(String, nullable=True)
     criado_em = Column(DateTime, default=datetime.now)
 
+    # Revisão (workflow de aprovação no painel)
+    status_revisao = Column(String, default="PENDENTE")  # PENDENTE | APROVADO | REJEITADO
+    observacao_revisao = Column(String, nullable=True)
+    revisado_por = Column(String, nullable=True)
+    revisado_em = Column(DateTime, nullable=True)
+
     execucao = relationship("Execucao", back_populates="divergencias")
 
 class LogExecucao(Base):
@@ -79,6 +85,24 @@ class LogExecucao(Base):
 engine = create_engine(f"sqlite:///{config.DASHBOARD_DB_PATH}", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def _migrar_colunas():
+    """Migração leve para bancos existentes (SQLite): adiciona colunas novas."""
+    from sqlalchemy import text
+    novas = {
+        "status_revisao": "TEXT DEFAULT 'PENDENTE'",
+        "observacao_revisao": "TEXT",
+        "revisado_por": "TEXT",
+        "revisado_em": "DATETIME",
+    }
+    with engine.connect() as conn:
+        existentes = {r[1] for r in conn.execute(text("PRAGMA table_info(divergencias)"))}
+        for col, ddl in novas.items():
+            if col not in existentes:
+                conn.execute(text(f"ALTER TABLE divergencias ADD COLUMN {col} {ddl}"))
+        conn.commit()
+
+_migrar_colunas()
 
 def seed_admin_user():
     """Garante um usuário ADMIN inicial usando as credenciais do config/.env
@@ -225,6 +249,25 @@ def get_divergencias(execucao_id: int, criticidade: str = None, q: str = None) -
         for d in divergencias:
             db.expunge(d)
         return divergencias
+    finally:
+        db.close()
+
+def atualizar_revisao(divergencia_id: int, status: str, observacao: str = None,
+                      usuario: str = None) -> Optional[Divergencia]:
+    """Marca uma divergência como APROVADO/REJEITADO/PENDENTE no fluxo de revisão."""
+    db = SessionLocal()
+    try:
+        d = db.query(Divergencia).filter(Divergencia.id == divergencia_id).first()
+        if not d:
+            return None
+        d.status_revisao = status
+        d.observacao_revisao = observacao
+        d.revisado_por = usuario
+        d.revisado_em = datetime.now() if status != "PENDENTE" else None
+        db.commit()
+        db.refresh(d)
+        db.expunge(d)
+        return d
     finally:
         db.close()
 
