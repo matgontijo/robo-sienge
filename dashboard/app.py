@@ -84,6 +84,70 @@ def listar_divergencias(execucao_id: int, criticidade: str = None, q: str = None
 def listar_pagamentos(execucao_id: int):
     return db.get_pagamentos(execucao_id)
 
+NOMES_TIPO_PT = {
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Destino do pagamento diferente do CNPJ do credor",
+    "CNPJ_DIVERGENTE": "CNPJ da nota diferente do credor do titulo",
+    "VALOR_DIVERGENTE": "Valor do titulo diferente do valor da nota",
+    "LIQUIDO_BRUTO_DIVERGENTE": "Liquido diferente de bruto menos retencoes (via NF)",
+    "LIQUIDO_PARCELA_DIVERGENTE": "Parcela menos retencoes (caucao/INSS...) diferente do valor a pagar",
+    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto (linha digitavel) diferente do valor a pagar",
+    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto incompativel com a forma (proprio/outros)",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto diferente do titulo",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED x deposito mesmo banco (conta destino)",
+    "IMPOSTO_DIVERGENTE": "Imposto retido diferente do destacado na nota",
+    "CHAVE_NFE_INVALIDA": "Chave de NF-e invalida",
+    "BOLETO_NAO_ENCONTRADO": "Boleto nao encontrado no DDA",
+    "SEM_ANEXO": "Titulo sem anexo no Sienge",
+    "ANEXO_ILEGIVEL": "Anexo nao lido (OCR pendente)",
+    "PIX_NAO_VERIFICAVEL": "Chave Pix nao verificavel",
+    "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompativel",
+    "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
+}
+
+@app.get("/api/execucoes/{execucao_id}/revisao/relatorio", dependencies=[Depends(get_current_user)])
+def relatorio_revisao(execucao_id: int, status: str = "REJEITADO"):
+    """Gera um Excel com as divergências revisadas no status pedido
+    (REJEITADO por padrão) — o dossiê para corrigir os lançamentos no Sienge."""
+    status = (status or "REJEITADO").upper()
+    divs = [d for d in db.get_divergencias(execucao_id)
+            if (d.status_revisao or "PENDENTE") == status]
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = status.capitalize() + "s"
+    headers = ["Nº Título", "Fornecedor", "CNPJ Fornecedor", "Valor (R$)", "Vencimento",
+               "Problema", "Campo", "Sienge diz", "Verificado", "Criticidade",
+               "Observação da revisão", "Revisado por", "Revisado em"]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", start_color="D9D9D9")
+    for d in divs:
+        ws.append([
+            d.titulo_numero, d.fornecedor_nome, d.fornecedor_cnpj,
+            d.valor_sienge, str(d.data_vencimento or ""),
+            NOMES_TIPO_PT.get(d.tipo, d.tipo), d.campo,
+            d.valor_sienge_campo, d.valor_boleto_campo if d.valor_boleto_campo not in (None, "-") else d.valor_nfe_campo,
+            d.criticidade, d.observacao_revisao,
+            d.revisado_por, str(d.revisado_em or "")[:16].replace("T", " "),
+        ])
+    ws.auto_filter.ref = f"A1:M{max(1, len(divs) + 1)}"
+    for col in ws.columns:
+        width = max((len(str(c.value)) for c in col if c.value), default=8)
+        ws.column_dimensions[col[0].column_letter].width = min(width + 2, 55)
+
+    pasta = os.path.join(config.OUTPUT_DIR, "relatorios")
+    os.makedirs(pasta, exist_ok=True)
+    nome = f"revisao_{status.lower()}_ciclo{execucao_id}_{_dt.datetime.now().strftime('%Y-%m-%d_%H%M')}.xlsx"
+    caminho = os.path.join(pasta, nome)
+    wb.save(caminho)
+    return FileResponse(path=caminho, filename=nome,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 class RevisaoPayload(BaseModel):
     status: str  # PENDENTE | APROVADO | REJEITADO
     observacao: Optional[str] = None

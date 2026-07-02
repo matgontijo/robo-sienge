@@ -162,6 +162,8 @@ label.toggle { display:flex; gap:6px; align-items:center; font-size:12px; color:
             <div class="pct" id="ring-pct">0%</div>
         </div>
         <span class="kbd-hint"><kbd>↑</kbd><kbd>↓</kbd> navegar &nbsp;<kbd>A</kbd> aprovar título</span>
+        <button class="bt" id="bt-rej" style="background:#7f1d1d;color:#fff;font-size:12.5px;padding:8px 14px"
+                title="Baixar Excel com tudo que foi rejeitado neste ciclo">⬇ Rejeitados</button>
     </div>
 </header>
 
@@ -516,6 +518,20 @@ document.addEventListener("keydown", e => {
     if (e.key.toLowerCase() === "a") { const t = vis[i]; if (t && t.pendentes) aprovarTitulo(t); }
 });
 $("busca").addEventListener("input", e => { BUSCA = e.target.value.toLowerCase(); renderFila(); });
+$("bt-rej").addEventListener("click", async () => {
+    const execId = $("sel-exec").value;
+    if (!execId) return;
+    const n = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
+    if (!n) return toast("Nenhum apontamento rejeitado neste ciclo.");
+    const r = await fetch("/api/execucoes/" + execId + "/revisao/relatorio?status=REJEITADO", { headers: H() });
+    if (!r.ok) return toast("Erro ao gerar o relatório.");
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "rejeitados_ciclo" + execId + ".xlsx";
+    a.click();
+    toast(n + " rejeitado(s) exportados ⬇");
+});
 $("incluir-ok").addEventListener("change", e => { INCLUIR_OK = e.target.checked; montarTitulos(); renderTudo(); });
 
 init();
