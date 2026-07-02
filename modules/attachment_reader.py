@@ -145,7 +145,7 @@ class AttachmentReader:
             logger.debug(f"Ritmo Gemini: aguardando {espera:.1f}s")
             time.sleep(max(espera, 0.5))
 
-        self.system_prompt_boleto = """Você é um extrator de dados de boletos bancários brasileiros.
+    system_prompt_boleto = """Você é um extrator de dados de boletos bancários brasileiros.
 Localize, se houver, os dados do boleto na imagem e retorne APENAS JSON válido, sem markdown:
 {"tem_boleto": true, "linha_digitavel": "<somente dígitos>", "cnpj_beneficiario": "<somente dígitos>", "nome_beneficiario": "<texto>", "valor": <numero ou null>, "vencimento": "AAAA-MM-DD ou null"}
 Regras:
@@ -153,9 +153,9 @@ Regras:
 2. cnpj_beneficiario: CNPJ do BENEFICIÁRIO/cedente (quem recebe), não do pagador. Somente dígitos.
 3. Se a imagem NÃO contiver um boleto, retorne {"tem_boleto": false}.
 4. Nunca adicione texto fora do JSON."""
-        
-        # O prompt fornecido nas regras
-        self.system_prompt = """Você é um extrator especializado de dados fiscais brasileiros.
+
+    # O prompt fornecido nas regras
+    system_prompt = """Você é um extrator especializado de dados fiscais brasileiros.
 Sua única função é localizar e retornar a chave de acesso de
 Nota Fiscal Eletrônica (NF-e) presente na imagem.
 
