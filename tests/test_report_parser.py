@@ -149,7 +149,8 @@ def test_decodificar_linha_digitavel_valor_e_vencimento():
     assert len(ld) == 47
     out = decodificar_linha_digitavel(ld)
     assert out["valor"] == pytest.approx(20.0)
-    assert out["vencimento"] == _FEBRABAN_BASE + timedelta(days=1000)
+    # Reset FEBRABAN: fator 1000 = 22/02/2025 (novo ciclo, +9000 dias sobre a base antiga)
+    assert out["vencimento"] == date(2025, 2, 22)
 
 
 def test_decodificar_linha_digitavel_concessionaria_retorna_none():
