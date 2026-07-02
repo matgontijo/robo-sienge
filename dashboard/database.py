@@ -69,6 +69,32 @@ class Divergencia(Base):
 
     execucao = relationship("Execucao", back_populates="divergencias")
 
+class Pagamento(Base):
+    """Dados de pagamento da parcela (aba Inf. Pagamento do Sienge) por execução —
+    contexto completo para a tela de revisão."""
+    __tablename__ = "pagamentos"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    execucao_id = Column(Integer, ForeignKey("execucoes.id"), index=True)
+    titulo_numero = Column(String, index=True)
+    parcela = Column(String, nullable=True)
+    fornecedor = Column(String, nullable=True)
+    cnpj_credor = Column(String, nullable=True)
+    forma = Column(String, nullable=True)
+    valor = Column(Float, nullable=True)
+    vencimento = Column(String, nullable=True)
+    tipo_chave_pix = Column(String, nullable=True)
+    chave_pix = Column(String, nullable=True)
+    banco = Column(String, nullable=True)
+    agencia = Column(String, nullable=True)
+    conta = Column(String, nullable=True)
+    titular = Column(String, nullable=True)
+    cnpj_destino = Column(String, nullable=True)
+    linha_digitavel = Column(String, nullable=True)
+    banco_boleto = Column(String, nullable=True)
+    valor_boleto = Column(Float, nullable=True)
+    confronto = Column(String, nullable=True)
+
 class LogExecucao(Base):
     __tablename__ = "logs_execucao"
 
@@ -249,6 +275,46 @@ def get_divergencias(execucao_id: int, criticidade: str = None, q: str = None) -
         for d in divergencias:
             db.expunge(d)
         return divergencias
+    finally:
+        db.close()
+
+def registrar_pagamentos(execucao_id: int, rows: list) -> None:
+    """Grava em lote os dados de pagamento da execução (para a tela de revisão)."""
+    db = SessionLocal()
+    try:
+        for p in rows or []:
+            db.add(Pagamento(
+                execucao_id=execucao_id,
+                titulo_numero=str(p.get("numero") or ""),
+                parcela=str(p.get("parcela") or "") or None,
+                fornecedor=p.get("fornecedor"),
+                cnpj_credor=p.get("cnpj_credor"),
+                forma=p.get("forma"),
+                valor=p.get("valor"),
+                vencimento=str(p.get("vencimento") or "") or None,
+                tipo_chave_pix=p.get("tipo_chave_pix"),
+                chave_pix=p.get("chave_pix"),
+                banco=p.get("banco"),
+                agencia=p.get("agencia"),
+                conta=p.get("conta"),
+                titular=p.get("titular"),
+                cnpj_destino=p.get("cnpj_destino"),
+                linha_digitavel=p.get("linha_digitavel"),
+                banco_boleto=p.get("banco_boleto"),
+                valor_boleto=p.get("valor_boleto"),
+                confronto=p.get("confronto"),
+            ))
+        db.commit()
+    finally:
+        db.close()
+
+def get_pagamentos(execucao_id: int) -> List["Pagamento"]:
+    db = SessionLocal()
+    try:
+        rows = db.query(Pagamento).filter(Pagamento.execucao_id == execucao_id).all()
+        for r in rows:
+            db.expunge(r)
+        return rows
     finally:
         db.close()
 

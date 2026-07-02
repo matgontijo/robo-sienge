@@ -380,6 +380,12 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                         "danfe_path": d.danfe_path
                     })
 
+        # Persiste os dados de pagamento no banco (tela de revisão do painel)
+        try:
+            db.registrar_pagamentos(exec_id, pagamentos_rows)
+        except Exception as e:  # noqa: BLE001
+            log("WARNING", "dashboard", f"Falha ao gravar pagamentos no banco: {e}")
+
         # Gerar Relatório
         relatorio_path = report_gen.gerar(
             divergencias=divergencias_finais,

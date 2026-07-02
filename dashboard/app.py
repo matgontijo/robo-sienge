@@ -80,6 +80,10 @@ def obter_execucao(execucao_id: int):
 def listar_divergencias(execucao_id: int, criticidade: str = None, q: str = None):
     return db.get_divergencias(execucao_id, criticidade, q)
 
+@app.get("/api/execucoes/{execucao_id}/pagamentos", dependencies=[Depends(get_current_user)])
+def listar_pagamentos(execucao_id: int):
+    return db.get_pagamentos(execucao_id)
+
 class RevisaoPayload(BaseModel):
     status: str  # PENDENTE | APROVADO | REJEITADO
     observacao: Optional[str] = None

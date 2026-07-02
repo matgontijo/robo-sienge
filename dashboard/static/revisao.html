@@ -3,309 +3,520 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Revisão de Divergências | Robô de Conferência</title>
+<title>Conferência de Pagamentos | Robô Sienge</title>
 <style>
-    :root {
-        --ink:#14202b; --muted:#5b6b7a; --line:#e3e9ef; --bg:#f6f8fa; --card:#fff;
-        --ok:#1e8e5a; --ok-bg:#e7f6ee; --warn:#b47d00; --warn-bg:#fdf3dc;
-        --crit:#c0392b; --crit-bg:#fdeceb; --accent:#0b5fff; --accent-bg:#eaf1ff;
-    }
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:"Segoe UI",system-ui,Arial,sans-serif; background:var(--bg); color:var(--ink);
-           line-height:1.5; padding:24px 20px 80px; }
-    .wrap { max-width:1100px; margin:0 auto; }
+:root {
+    --ink:#101b26; --muted:#64748b; --line:#e2e8f0; --bg:#eef2f6; --card:#fff;
+    --ok:#16a34a; --ok-bg:#dcfce7; --warn:#d97706; --warn-bg:#fef3c7;
+    --crit:#dc2626; --crit-bg:#fee2e2; --accent:#2563eb; --accent-bg:#dbeafe;
+    --sel:#eff6ff;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body { font-family:"Segoe UI",system-ui,Arial,sans-serif; background:var(--bg); color:var(--ink);
+       display:flex; flex-direction:column; overflow:hidden; }
 
-    .topo { display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;
-            background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 22px; margin-bottom:16px; }
-    .topo h1 { font-size:20px; font-weight:800; }
-    .topo .sub { font-size:13px; color:var(--muted); }
-    select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; background:#fff; }
+/* ===================== HEADER ===================== */
+header { background:#0f2740; color:#fff; padding:10px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+header h1 { font-size:16.5px; font-weight:800; letter-spacing:.2px; }
+header .sub { font-size:11.5px; color:#9db8d4; }
+header select { padding:6px 10px; border-radius:8px; border:none; font-size:13px; }
+.hstats { display:flex; gap:8px; margin-left:auto; align-items:center; flex-wrap:wrap; }
+.pill { padding:4px 12px; border-radius:999px; font-size:12.5px; font-weight:700; background:rgba(255,255,255,.1); }
+.pill b { font-size:14px; }
+.pill.crit { background:#7f1d1d; } .pill.warn { background:#78350f; }
+.pill.okp { background:#14532d; }
+.ring { position:relative; width:46px; height:46px; }
+.ring svg { transform:rotate(-90deg); }
+.ring .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+             font-size:11px; font-weight:800; }
+.kbd-hint { font-size:11px; color:#9db8d4; }
+.kbd-hint kbd { background:rgba(255,255,255,.15); border-radius:4px; padding:1px 6px; font-family:inherit; }
 
-    .progresso { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 22px; margin-bottom:16px; }
-    .barra { height:10px; background:#e9eef4; border-radius:999px; overflow:hidden; margin-top:8px; }
-    .barra > div { height:100%; background:linear-gradient(90deg,var(--ok),#39c07f); width:0%; transition:width .3s; }
-    .progresso .txt { font-size:13.5px; color:var(--muted); }
+/* ===================== LAYOUT ===================== */
+main { flex:1; display:flex; min-height:0; }
 
-    .filtros { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; align-items:center; }
-    .chip { border:1px solid var(--line); background:#fff; padding:6px 14px; border-radius:999px;
-            font-size:13px; cursor:pointer; user-select:none; }
-    .chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-    #busca { flex:1; min-width:200px; padding:8px 12px; border:1px solid var(--line); border-radius:999px; font-size:13.5px; }
+/* ---------- FILA (esquerda) ---------- */
+#fila { width:400px; min-width:320px; background:var(--card); border-right:1px solid var(--line);
+        display:flex; flex-direction:column; }
+.fila-tools { padding:12px 14px 8px; border-bottom:1px solid var(--line); }
+#busca { width:100%; padding:9px 14px; border:1px solid var(--line); border-radius:10px; font-size:13.5px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.chip { border:1px solid var(--line); background:#fff; padding:4px 11px; border-radius:999px;
+        font-size:12px; cursor:pointer; user-select:none; font-weight:600; color:var(--muted); }
+.chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+.chip .n { font-weight:800; }
+label.toggle { display:flex; gap:6px; align-items:center; font-size:12px; color:var(--muted); margin-top:9px; cursor:pointer; }
 
-    .titulo-card { background:var(--card); border:1px solid var(--line); border-radius:14px; margin-bottom:14px; overflow:hidden; }
-    .titulo-head { display:flex; flex-wrap:wrap; gap:10px 22px; align-items:center; padding:14px 20px;
-                   background:#f0f4f8; border-bottom:1px solid var(--line); }
-    .titulo-head b { font-size:15px; }
-    .titulo-head .m { font-size:13px; color:var(--muted); }
-    .titulo-head .spacer { flex:1; }
-    button { border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; }
-    .bt-aprovar { background:var(--ok-bg); color:var(--ok); }
-    .bt-aprovar:hover { background:#d3efdf; }
-    .bt-rejeitar { background:var(--crit-bg); color:var(--crit); }
-    .bt-rejeitar:hover { background:#fbdbd8; }
-    .bt-reabrir { background:#eef2f6; color:var(--muted); }
-    .bt-tudo { background:var(--accent-bg); color:var(--accent); }
+#lista { flex:1; overflow-y:auto; }
+.item { padding:11px 14px 11px 11px; border-bottom:1px solid var(--line); cursor:pointer;
+        display:flex; gap:10px; align-items:stretch; }
+.item:hover { background:#f8fafc; }
+.item.sel { background:var(--sel); box-shadow:inset 3px 0 0 var(--accent); }
+.strip { width:5px; border-radius:4px; flex-shrink:0; }
+.strip.crit { background:var(--crit); } .strip.warn { background:var(--warn); }
+.strip.done { background:var(--ok); } .strip.okt { background:#c9d4e0; }
+.item .mid { flex:1; min-width:0; }
+.item .l1 { display:flex; gap:8px; align-items:baseline; }
+.item .num { font-weight:800; font-size:13.5px; }
+.item .forn { font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.item .l2 { display:flex; gap:8px; margin-top:3px; align-items:center; flex-wrap:wrap; }
+.item .val { font-size:12.5px; font-weight:700; }
+.mini { font-size:10.5px; font-weight:800; border-radius:6px; padding:1px 7px; }
+.mini.crit { background:var(--crit-bg); color:var(--crit); }
+.mini.warn { background:var(--warn-bg); color:var(--warn); }
+.mini.done { background:var(--ok-bg); color:var(--ok); }
+.mini.rej  { background:#f1f5f9; color:var(--muted); }
+.item .chev { align-self:center; color:#cbd5e1; font-size:18px; }
 
-    .div-row { display:flex; flex-wrap:wrap; gap:10px 16px; padding:14px 20px; border-bottom:1px solid var(--line);
-               align-items:flex-start; }
-    .div-row:last-child { border-bottom:none; }
-    .div-row.APROVADO { background:#f4fbf7; }
-    .div-row.REJEITADO { background:#fdf5f4; }
-    .div-info { flex:1 1 380px; }
-    .div-info .tipo { font-weight:700; font-size:14px; }
-    .div-info .valores { font-size:13px; color:#33424f; margin-top:4px; }
-    .div-info .valores span { display:inline-block; margin-right:14px; }
-    .badge { display:inline-block; font-size:11px; font-weight:800; padding:2px 9px; border-radius:999px; margin-left:8px; vertical-align:middle; }
-    .b-crit { background:var(--crit-bg); color:var(--crit); }
-    .b-warn { background:var(--warn-bg); color:var(--warn); }
-    .b-ok { background:var(--ok-bg); color:var(--ok); }
-    .b-cinza { background:#eef2f6; color:var(--muted); }
-    .div-acoes { display:flex; flex-direction:column; gap:8px; align-items:flex-end; min-width:230px; }
-    .div-acoes .linha-bt { display:flex; gap:8px; }
-    .obs { width:230px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; font-size:12.5px; }
-    .quem { font-size:11.5px; color:var(--muted); }
+/* ---------- DETALHE (direita) ---------- */
+#detalhe { flex:1; overflow-y:auto; padding:18px 22px 90px; }
+.vazio { color:var(--muted); text-align:center; margin-top:80px; font-size:14.5px; }
 
-    #vazio { text-align:center; color:var(--muted); padding:50px 0; display:none; }
-    .toast { position:fixed; bottom:22px; right:22px; background:var(--ink); color:#fff; padding:12px 20px;
-             border-radius:10px; font-size:13.5px; opacity:0; transition:opacity .3s; pointer-events:none; }
-    .toast.show { opacity:1; }
+.det-head { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 20px;
+            display:flex; flex-wrap:wrap; gap:8px 26px; align-items:center; margin-bottom:14px; }
+.det-head .tit { font-size:19px; font-weight:800; }
+.det-head .kv { font-size:13px; color:var(--muted); }
+.det-head .kv b { color:var(--ink); font-size:14px; }
+.det-head .spacer { flex:1; }
+.bt { border:none; border-radius:10px; padding:10px 18px; font-size:13.5px; font-weight:800; cursor:pointer; }
+.bt-aprovar-tudo { background:var(--ok); color:#fff; }
+.bt-aprovar-tudo:hover { background:#15803d; }
+.bt-aprovar-tudo:disabled { background:#cbd5e1; cursor:default; }
+
+.sec-t { font-size:12px; font-weight:800; letter-spacing:.8px; text-transform:uppercase; color:var(--muted);
+         margin:16px 2px 8px; }
+
+/* pagamento */
+.pagcard { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 18px; }
+.paggrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px 22px; }
+.pg { font-size:13.5px; }
+.pg .k { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); font-weight:700; }
+.pg .v { font-weight:600; margin-top:1px; word-break:break-all; }
+.pg .v.mono { font-family:Consolas,monospace; font-size:12.5px; }
+.match-ok { color:var(--ok); font-weight:800; }
+.match-bad { color:var(--crit); font-weight:800; }
+.conf-chip { display:inline-block; padding:3px 12px; border-radius:999px; font-size:12px; font-weight:800; }
+.conf-OK { background:var(--ok-bg); color:var(--ok); }
+.conf-DIVERGENTE { background:var(--crit-bg); color:var(--crit); }
+.conf-outro { background:var(--warn-bg); color:var(--warn); }
+
+/* apontamentos */
+.apto { background:var(--card); border:1px solid var(--line); border-left-width:5px; border-radius:14px;
+        padding:14px 18px; margin-bottom:10px; }
+.apto.CRITICA { border-left-color:var(--crit); }
+.apto.ATENCAO { border-left-color:var(--warn); }
+.apto.APROVADO { opacity:.75; border-left-color:var(--ok); background:#fbfefc; }
+.apto.REJEITADO { opacity:.75; border-left-color:#94a3b8; background:#fafbfc; }
+.apto .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.apto .nome { font-size:14.5px; font-weight:800; }
+.badge { font-size:10.5px; font-weight:800; padding:2px 9px; border-radius:999px; }
+.b-crit { background:var(--crit-bg); color:var(--crit); }
+.b-warn { background:var(--warn-bg); color:var(--warn); }
+.b-ok { background:var(--ok-bg); color:var(--ok); }
+.b-cinza { background:#f1f5f9; color:var(--muted); }
+.apto .comp { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.compbox { background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:8px 14px; font-size:13px; min-width:150px; }
+.compbox .k { font-size:10.5px; text-transform:uppercase; color:var(--muted); font-weight:800; letter-spacing:.4px; }
+.compbox .v { font-weight:700; margin-top:2px; }
+.apto .acts { display:flex; gap:8px; margin-top:12px; align-items:center; flex-wrap:wrap; }
+.bt-sm { border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:800; cursor:pointer; }
+.bt-ap { background:var(--ok-bg); color:var(--ok); } .bt-ap:hover { background:#c2f0d2; }
+.bt-rj { background:var(--crit-bg); color:var(--crit); } .bt-rj:hover { background:#fbd0d0; }
+.bt-re { background:#f1f5f9; color:var(--muted); }
+.obs { flex:1; min-width:180px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; font-size:12.5px; }
+.quem { font-size:11.5px; color:var(--muted); margin-top:8px; }
+
+.fim { background:var(--ok-bg); border:1px solid #bbe7cb; color:#14532d; border-radius:14px;
+       padding:18px 22px; font-size:14.5px; font-weight:700; margin-bottom:14px; display:none; }
+
+.toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff;
+         padding:11px 22px; border-radius:10px; font-size:13.5px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:9; }
+.toast.show { opacity:1; }
+
+@media (max-width: 860px) {
+    #fila { width:100%; }
+    main { flex-direction:column; }
+    #detalhe { padding:14px; }
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-    <div class="topo">
-        <div>
-            <h1>🔎 Revisão de Divergências</h1>
-            <div class="sub" id="sub">Analise cada apontamento e aprove ou rejeite antes da remessa.</div>
+
+<header>
+    <div>
+        <h1>🛡️ Conferência de Pagamentos</h1>
+        <div class="sub">aprove ou rejeite cada apontamento antes da remessa</div>
+    </div>
+    <select id="sel-exec" title="Ciclo"></select>
+    <div class="hstats">
+        <span class="pill crit">🔴 <b id="h-crit">0</b> críticas pendentes</span>
+        <span class="pill warn">🟡 <b id="h-warn">0</b> atenções pendentes</span>
+        <span class="pill okp">✓ <b id="h-done">0</b> revisadas</span>
+        <div class="ring" title="Progresso da revisão">
+            <svg width="46" height="46">
+                <circle cx="23" cy="23" r="19" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="5"/>
+                <circle id="ring-bar" cx="23" cy="23" r="19" fill="none" stroke="#4ade80" stroke-width="5"
+                        stroke-linecap="round" stroke-dasharray="119.4" stroke-dashoffset="119.4"/>
+            </svg>
+            <div class="pct" id="ring-pct">0%</div>
         </div>
-        <div>
-            <label class="sub" for="sel-exec">Ciclo:&nbsp;</label>
-            <select id="sel-exec"></select>
+        <span class="kbd-hint"><kbd>↑</kbd><kbd>↓</kbd> navegar &nbsp;<kbd>A</kbd> aprovar título</span>
+    </div>
+</header>
+
+<main>
+    <section id="fila">
+        <div class="fila-tools">
+            <input id="busca" placeholder="🔍 Fornecedor, nº do título, tipo...">
+            <div class="chips" id="chips"></div>
+            <label class="toggle"><input type="checkbox" id="incluir-ok"> mostrar títulos sem apontamento</label>
         </div>
-    </div>
+        <div id="lista"></div>
+    </section>
 
-    <div class="progresso">
-        <div class="txt" id="prog-txt">–</div>
-        <div class="barra"><div id="prog-bar"></div></div>
-    </div>
+    <section id="detalhe"><div class="vazio">Selecione um título na fila ao lado.</div></section>
+</main>
 
-    <div class="filtros">
-        <span class="chip on" data-f="TODAS">Todas</span>
-        <span class="chip" data-f="PENDENTE">Pendentes</span>
-        <span class="chip" data-f="CRITICA">Críticas</span>
-        <span class="chip" data-f="ATENCAO">Atenção</span>
-        <span class="chip" data-f="APROVADO">Aprovadas</span>
-        <span class="chip" data-f="REJEITADO">Rejeitadas</span>
-        <input id="busca" placeholder="Buscar por fornecedor, nº do título ou tipo...">
-    </div>
-
-    <div id="lista"></div>
-    <div id="vazio">Nada aqui com esse filtro. 🎉</div>
-</div>
 <div class="toast" id="toast"></div>
 
 <script>
+"use strict";
 const NOMES = {
     "PAGAMENTO_DESTINO_DIVERGENTE": "Destino do pagamento ≠ CNPJ do credor",
     "CNPJ_DIVERGENTE": "CNPJ da nota ≠ credor do título",
     "VALOR_DIVERGENTE": "Valor do título ≠ valor da nota",
     "LIQUIDO_BRUTO_DIVERGENTE": "Líquido ≠ bruto − retenções (via NF)",
     "LIQUIDO_PARCELA_DIVERGENTE": "Parcela − retenções (caução/INSS…) ≠ valor a pagar",
-    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto (linha digitável) ≠ valor a pagar",
-    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto ≠ forma de pagamento (próprio/outros)",
-    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito mesmo banco (conta destino)",
-    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto ≠ vencimento do título",
+    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto ≠ valor a pagar",
+    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto × forma (próprio/outros)",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto ≠ título",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito mesmo banco",
     "IMPOSTO_DIVERGENTE": "Imposto retido ≠ destacado na nota",
     "CHAVE_NFE_INVALIDA": "Chave de NF-e inválida",
     "BOLETO_NAO_ENCONTRADO": "Boleto não encontrado no DDA",
     "SEM_ANEXO": "Título sem anexo no Sienge",
     "ANEXO_ILEGIVEL": "Anexo não lido (OCR pendente)",
-    "PIX_NAO_VERIFICAVEL": "Chave Pix não verificável (e-mail/telefone)",
+    "PIX_NAO_VERIFICAVEL": "Chave Pix não verificável",
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
+const EXPLICA = {
+    "PAGAMENTO_DESTINO_DIVERGENTE": "O dinheiro vai para um CNPJ diferente do credor cadastrado. Confirme cessão/autorização antes de aprovar.",
+    "LIQUIDO_PARCELA_DIVERGENTE": "A conta parcela − retenções não bate com o valor do fluxo de caixa.",
+    "BOLETO_VALOR_DIVERGENTE": "O valor embutido na linha digitável é diferente do valor a pagar.",
+    "BOLETO_BANCO_INCOMPATIVEL": "Forma de pagamento não confere com o banco emissor do boleto.",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED para conta do próprio Santander deve ser depósito/mesmo banco (e vice-versa).",
+    "SEM_ANEXO": "Cobrar o lançador: título sem NF/boleto anexado no Sienge.",
+    "PIX_NAO_VERIFICAVEL": "Chave Pix de e-mail/telefone não permite confirmar o titular — confira manualmente.",
+};
 
 let TOK = sessionStorage.getItem("auth_token");
-let DIVS = [];
-let FILTRO = "TODAS";
-let BUSCA = "";
+let DIVS = [], PAGS = [], TITULOS = [], SELECIONADO = null;
+let FILTRO = "PENDENTES", BUSCA = "", INCLUIR_OK = false;
 
+const $ = id => document.getElementById(id);
 const H = () => ({ "Authorization": "Basic " + TOK, "Content-Type": "application/json" });
+const dinheiro = v => v == null ? "–" : Number(v).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
+const dig = v => String(v || "").replace(/\D/g, "");
 
-function toast(msg) {
-    const t = document.getElementById("toast");
-    t.textContent = msg; t.classList.add("show");
-    setTimeout(() => t.classList.remove("show"), 1800);
-}
+function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("show");
+    clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600); }
 
+/* ============ carga ============ */
 async function init() {
     if (!TOK) {
-        const u = prompt("Usuário do painel:"), p = prompt("Senha:");
+        const u = prompt("Usuário do painel:"), p = u && prompt("Senha:");
         if (!u) return;
-        TOK = btoa(u + ":" + p);
-        sessionStorage.setItem("auth_token", TOK);
+        TOK = btoa(u + ":" + p); sessionStorage.setItem("auth_token", TOK);
     }
     const r = await fetch("/api/execucoes?limit=15", { headers: H() });
     if (r.status === 401) { sessionStorage.removeItem("auth_token"); TOK = null; return init(); }
     const execs = (await r.json()).filter(e => e.status === "CONCLUIDO");
-    const sel = document.getElementById("sel-exec");
-    sel.innerHTML = "";
+    const sel = $("sel-exec"); sel.innerHTML = "";
     execs.forEach(e => {
         const o = document.createElement("option");
         o.value = e.id;
-        o.textContent = "#" + e.id + " · " + (e.iniciado_em || "").replace("T", " ").slice(0, 16) +
-            " · " + (e.total_titulos ?? "?") + " títulos";
+        o.textContent = "Ciclo #" + e.id + " · " + (e.iniciado_em || "").replace("T", " ").slice(0, 16);
         sel.appendChild(o);
     });
     sel.onchange = () => carregar(sel.value);
     if (execs.length) carregar(execs[0].id);
-    else document.getElementById("sub").textContent = "Nenhum ciclo concluído ainda.";
 }
 
 async function carregar(execId) {
-    const r = await fetch("/api/execucoes/" + execId + "/divergencias", { headers: H() });
-    DIVS = await r.json();
-    DIVS.forEach(d => { if (!d.status_revisao) d.status_revisao = "PENDENTE"; });
-    render();
+    const [d, p] = await Promise.all([
+        fetch("/api/execucoes/" + execId + "/divergencias", { headers: H() }).then(r => r.json()),
+        fetch("/api/execucoes/" + execId + "/pagamentos", { headers: H() }).then(r => r.ok ? r.json() : []),
+    ]);
+    DIVS = d; PAGS = p || [];
+    DIVS.forEach(x => { if (!x.status_revisao) x.status_revisao = "PENDENTE"; });
+    montarTitulos();
+    SELECIONADO = TITULOS.find(t => t.pendentes > 0)?.numero ?? TITULOS[0]?.numero ?? null;
+    renderTudo();
 }
 
-function passaFiltro(d) {
-    const st = d.status_revisao || "PENDENTE";
-    if (FILTRO === "PENDENTE" && st !== "PENDENTE") return false;
-    if (FILTRO === "APROVADO" && st !== "APROVADO") return false;
-    if (FILTRO === "REJEITADO" && st !== "REJEITADO") return false;
-    if (FILTRO === "CRITICA" && d.criticidade !== "CRITICA") return false;
-    if (FILTRO === "ATENCAO" && d.criticidade !== "ATENCAO") return false;
+function montarTitulos() {
+    const map = {};
+    DIVS.forEach(d => {
+        const k = String(d.titulo_numero || "?");
+        (map[k] = map[k] || { numero:k, divs:[], pag:null }).divs.push(d);
+    });
+    PAGS.forEach(p => {
+        const k = String(p.titulo_numero || "?");
+        if (map[k]) { map[k].pag = map[k].pag || p; }
+        else if (INCLUIR_OK) map[k] = { numero:k, divs:[], pag:p };
+    });
+    TITULOS = Object.values(map).map(t => {
+        const pend = t.divs.filter(d => d.status_revisao === "PENDENTE");
+        t.pendentes = pend.length;
+        t.critPend = pend.filter(d => d.criticidade === "CRITICA").length;
+        t.warnPend = pend.length - t.critPend;
+        t.aprovados = t.divs.filter(d => d.status_revisao === "APROVADO").length;
+        t.rejeitados = t.divs.filter(d => d.status_revisao === "REJEITADO").length;
+        const d0 = t.divs[0] || {};
+        t.fornecedor = d0.fornecedor_nome || t.pag?.fornecedor || "";
+        t.cnpj = d0.fornecedor_cnpj || t.pag?.cnpj_credor || "";
+        t.valor = d0.valor_sienge ?? t.pag?.valor;
+        t.venc = d0.data_vencimento || t.pag?.vencimento || "";
+        return t;
+    });
+    // ordena: críticas pendentes > atenção pendentes > revisados > sem apontamento; depois maior valor
+    TITULOS.sort((a, b) =>
+        (b.critPend - a.critPend) || (b.warnPend - a.warnPend) ||
+        ((b.divs.length ? 1 : 0) - (a.divs.length ? 1 : 0)) ||
+        ((b.valor || 0) - (a.valor || 0)));
+}
+
+/* ============ filtros ============ */
+const CHIPS = [
+    ["PENDENTES", "Pendentes"], ["CRITICAS", "Críticas"], ["ATENCAO", "Atenção"],
+    ["APROVADOS", "Aprovados"], ["REJEITADOS", "Rejeitados"], ["TODAS", "Todos"],
+];
+function contagem(f) {
+    switch (f) {
+        case "PENDENTES": return TITULOS.filter(t => t.pendentes > 0).length;
+        case "CRITICAS": return TITULOS.filter(t => t.critPend > 0).length;
+        case "ATENCAO": return TITULOS.filter(t => t.warnPend > 0).length;
+        case "APROVADOS": return TITULOS.filter(t => t.divs.length && t.aprovados === t.divs.length).length;
+        case "REJEITADOS": return TITULOS.filter(t => t.rejeitados > 0).length;
+        default: return TITULOS.length;
+    }
+}
+function passaFiltro(t) {
     if (BUSCA) {
-        const alvo = ((d.fornecedor_nome || "") + " " + (d.titulo_numero || "") + " " +
-            (d.tipo || "") + " " + (NOMES[d.tipo] || "")).toLowerCase();
+        const alvo = (t.numero + " " + t.fornecedor + " " +
+            t.divs.map(d => (d.tipo || "") + " " + (NOMES[d.tipo] || "")).join(" ")).toLowerCase();
         if (!alvo.includes(BUSCA)) return false;
     }
-    return true;
+    switch (FILTRO) {
+        case "PENDENTES": return t.pendentes > 0;
+        case "CRITICAS": return t.critPend > 0;
+        case "ATENCAO": return t.warnPend > 0;
+        case "APROVADOS": return t.divs.length > 0 && t.aprovados === t.divs.length;
+        case "REJEITADOS": return t.rejeitados > 0;
+        default: return true;
+    }
 }
 
-function render() {
-    const revisadas = DIVS.filter(d => (d.status_revisao || "PENDENTE") !== "PENDENTE").length;
-    const pct = DIVS.length ? Math.round(100 * revisadas / DIVS.length) : 0;
-    document.getElementById("prog-bar").style.width = pct + "%";
-    document.getElementById("prog-txt").textContent =
-        revisadas + " de " + DIVS.length + " apontamentos revisados (" + pct + "%) · " +
-        DIVS.filter(d => d.criticidade === "CRITICA" && (d.status_revisao || "PENDENTE") === "PENDENTE").length +
-        " críticas pendentes";
+/* ============ render ============ */
+function renderTudo() { renderHeader(); renderChips(); renderFila(); renderDetalhe(); }
 
-    const visiveis = DIVS.filter(passaFiltro);
-    const porTitulo = {};
-    visiveis.forEach(d => {
-        const k = d.titulo_numero || "?";
-        (porTitulo[k] = porTitulo[k] || []).push(d);
-    });
+function renderHeader() {
+    const pend = DIVS.filter(d => d.status_revisao === "PENDENTE");
+    const crit = pend.filter(d => d.criticidade === "CRITICA").length;
+    $("h-crit").textContent = crit;
+    $("h-warn").textContent = pend.length - crit;
+    const done = DIVS.length - pend.length;
+    $("h-done").textContent = done + "/" + DIVS.length;
+    const pct = DIVS.length ? Math.round(100 * done / DIVS.length) : 0;
+    $("ring-pct").textContent = pct + "%";
+    $("ring-bar").style.strokeDashoffset = 119.4 * (1 - pct / 100);
+}
 
-    const lista = document.getElementById("lista");
-    lista.innerHTML = "";
-    document.getElementById("vazio").style.display = visiveis.length ? "none" : "";
-
-    Object.entries(porTitulo).forEach(([num, divs]) => {
-        const d0 = divs[0];
-        const card = document.createElement("div");
-        card.className = "titulo-card";
-
-        const head = document.createElement("div");
-        head.className = "titulo-head";
-        head.innerHTML =
-            "<b>Título " + num + "</b>" +
-            "<span class='m'>" + (d0.fornecedor_nome || "") + "</span>" +
-            (d0.fornecedor_cnpj ? "<span class='m'>CNPJ " + d0.fornecedor_cnpj + "</span>" : "") +
-            (d0.valor_sienge ? "<span class='m'>R$ " + Number(d0.valor_sienge).toLocaleString("pt-BR", {minimumFractionDigits: 2}) + "</span>" : "") +
-            (d0.data_vencimento ? "<span class='m'>venc. " + d0.data_vencimento + "</span>" : "") +
-            "<span class='spacer'></span>";
-        const btTudo = document.createElement("button");
-        btTudo.className = "bt-tudo";
-        btTudo.textContent = "✓ Aprovar título inteiro";
-        btTudo.onclick = () => divs.forEach(d => salvar(d, "APROVADO", null, true));
-        head.appendChild(btTudo);
-        card.appendChild(head);
-
-        divs.forEach(d => card.appendChild(linha(d)));
-        lista.appendChild(card);
+function renderChips() {
+    const c = $("chips"); c.innerHTML = "";
+    CHIPS.forEach(([f, label]) => {
+        const el = document.createElement("span");
+        el.className = "chip" + (FILTRO === f ? " on" : "");
+        el.innerHTML = label + " <span class='n'>" + contagem(f) + "</span>";
+        el.onclick = () => { FILTRO = f; renderFila(); renderChips(); };
+        c.appendChild(el);
     });
 }
 
-function linha(d) {
+function renderFila() {
+    const lista = $("lista"); lista.innerHTML = "";
+    const vis = TITULOS.filter(passaFiltro);
+    if (!vis.some(t => t.numero === SELECIONADO)) SELECIONADO = vis[0]?.numero ?? null;
+    vis.forEach(t => {
+        const el = document.createElement("div");
+        el.className = "item" + (t.numero === SELECIONADO ? " sel" : "");
+        const strip = t.critPend ? "crit" : t.warnPend ? "warn" : t.divs.length ? "done" : "okt";
+        let minis = "";
+        if (t.critPend) minis += `<span class="mini crit">${t.critPend} crítica${t.critPend > 1 ? "s" : ""}</span>`;
+        if (t.warnPend) minis += `<span class="mini warn">${t.warnPend} atenção</span>`;
+        if (t.aprovados) minis += `<span class="mini done">✓ ${t.aprovados}</span>`;
+        if (t.rejeitados) minis += `<span class="mini rej">✗ ${t.rejeitados}</span>`;
+        if (!t.divs.length) minis += `<span class="mini done">sem apontamentos</span>`;
+        el.innerHTML =
+            `<div class="strip ${strip}"></div>
+             <div class="mid">
+                <div class="l1"><span class="num">${t.numero}</span>
+                    <span class="forn">${t.fornecedor || ""}</span></div>
+                <div class="l2"><span class="val">${dinheiro(t.valor)}</span>${minis}</div>
+             </div><div class="chev">›</div>`;
+        el.onclick = () => { SELECIONADO = t.numero; renderFila(); renderDetalhe(); };
+        lista.appendChild(el);
+    });
+    if (!vis.length) lista.innerHTML = "<div class='vazio'>Nada aqui com esse filtro 🎉</div>";
+}
+
+function linhaPg(k, v, extra) {
+    return v ? `<div class="pg"><div class="k">${k}</div><div class="v ${extra || ""}">${v}</div></div>` : "";
+}
+
+function renderDetalhe() {
+    const det = $("detalhe");
+    const t = TITULOS.find(x => x.numero === SELECIONADO);
+    if (!t) { det.innerHTML = "<div class='vazio'>Selecione um título na fila ao lado.</div>"; return; }
+    const p = t.pag;
+
+    const fimTudo = DIVS.length && DIVS.every(d => d.status_revisao !== "PENDENTE");
+
+    let html = "";
+    if (fimTudo) html += `<div class="fim" style="display:block">🎉 Todos os ${DIVS.length} apontamentos do ciclo foram revisados. Remessa liberada para montagem.</div>`;
+
+    html += `<div class="det-head">
+        <div><div class="tit">Título ${t.numero}${t.pag?.parcela ? " · parc. " + t.pag.parcela : ""}</div>
+             <div class="kv">${t.fornecedor || ""}${t.cnpj ? " · CNPJ " + t.cnpj : ""}</div></div>
+        <div class="kv">Valor<br><b>${dinheiro(t.valor)}</b></div>
+        <div class="kv">Vencimento<br><b>${t.venc || "–"}</b></div>
+        ${p?.forma ? `<div class="kv">Forma<br><b>${p.forma}</b></div>` : ""}
+        <div class="spacer"></div>
+        <button class="bt bt-aprovar-tudo" id="bt-tudo" ${t.pendentes ? "" : "disabled"}>
+            ✓ Aprovar ${t.pendentes || ""} pendente${t.pendentes === 1 ? "" : "s"} <small>(A)</small></button>
+    </div>`;
+
+    if (p) {
+        const c1 = dig(p.cnpj_credor), c2 = dig(p.cnpj_destino);
+        const match = c1 && c2 ? (c1 === c2
+            ? "<span class='match-ok'>✓ igual ao credor</span>"
+            : "<span class='match-bad'>✗ DIFERENTE do credor</span>") : "";
+        const confCls = p.confronto === "OK" ? "conf-OK" : p.confronto === "DIVERGENTE" ? "conf-DIVERGENTE" : "conf-outro";
+        html += `<div class="sec-t">💳 Pagamento cadastrado na parcela</div>
+        <div class="pagcard"><div class="paggrid">
+            ${linhaPg("Forma", p.forma)}
+            ${linhaPg("Valor da parcela (bruto)", p.valor != null ? dinheiro(p.valor) : "")}
+            ${linhaPg("Chave Pix" + (p.tipo_chave_pix ? " (" + p.tipo_chave_pix + ")" : ""), p.chave_pix, "mono")}
+            ${linhaPg("Banco destino", p.banco)}
+            ${linhaPg("Agência / Conta", [p.agencia, p.conta].filter(Boolean).join(" / "))}
+            ${linhaPg("Titular / Beneficiário", p.titular)}
+            ${linhaPg("CNPJ destino", p.cnpj_destino ? p.cnpj_destino + " " + match : "")}
+            ${linhaPg("Linha digitável", p.linha_digitavel, "mono")}
+            ${linhaPg("Banco do boleto", p.banco_boleto)}
+            ${linhaPg("Valor do boleto (linha)", p.valor_boleto != null ? dinheiro(p.valor_boleto) : "")}
+            <div class="pg"><div class="k">Confronto</div><div class="v">
+                <span class="conf-chip ${confCls}">${p.confronto || "–"}</span></div></div>
+        </div></div>`;
+    }
+
+    html += `<div class="sec-t">⚠️ Apontamentos (${t.divs.length})</div>`;
+    if (!t.divs.length) html += `<div class="pagcard" style="color:var(--muted)">Nenhum apontamento — título liberado. ✓</div>`;
+    det.innerHTML = html;
+
+    t.divs.sort((a, b) => (a.criticidade === "CRITICA" ? 0 : 1) - (b.criticidade === "CRITICA" ? 0 : 1));
+    t.divs.forEach(d => det.appendChild(cartaoApto(d, t)));
+
+    const bt = $("bt-tudo");
+    if (bt) bt.onclick = () => aprovarTitulo(t);
+}
+
+function cartaoApto(d, t) {
     const st = d.status_revisao || "PENDENTE";
-    const row = document.createElement("div");
-    row.className = "div-row " + st;
-
-    const info = document.createElement("div");
-    info.className = "div-info";
-    const badgeCrit = d.criticidade === "CRITICA"
+    const box = document.createElement("div");
+    box.className = "apto " + (st === "PENDENTE" ? d.criticidade : st);
+    const badgeC = d.criticidade === "CRITICA"
         ? "<span class='badge b-crit'>CRÍTICA</span>" : "<span class='badge b-warn'>ATENÇÃO</span>";
-    const badgeSt = st === "APROVADO" ? "<span class='badge b-ok'>APROVADO</span>"
-        : st === "REJEITADO" ? "<span class='badge b-crit'>REJEITADO</span>"
-        : "<span class='badge b-cinza'>PENDENTE</span>";
-    info.innerHTML =
-        "<div class='tipo'>" + (NOMES[d.tipo] || d.tipo) + badgeCrit + badgeSt + "</div>" +
-        "<div class='valores'>" +
-        (d.campo ? "<span>📌 " + d.campo + "</span>" : "") +
-        (d.valor_sienge_campo ? "<span><b>Sienge:</b> " + d.valor_sienge_campo + "</span>" : "") +
-        (d.valor_nfe_campo && d.valor_nfe_campo !== "-" ? "<span><b>NF:</b> " + d.valor_nfe_campo + "</span>" : "") +
-        (d.valor_boleto_campo && d.valor_boleto_campo !== "-" ? "<span><b>Verificado:</b> " + d.valor_boleto_campo + "</span>" : "") +
-        "</div>" +
-        (d.revisado_por ? "<div class='quem'>revisado por " + d.revisado_por +
-            (d.revisado_em ? " em " + String(d.revisado_em).replace("T", " ").slice(0, 16) : "") + "</div>" : "");
-    row.appendChild(info);
+    const badgeS = st === "APROVADO" ? "<span class='badge b-ok'>APROVADO</span>"
+        : st === "REJEITADO" ? "<span class='badge b-cinza'>REJEITADO</span>" : "";
+    const explica = EXPLICA[d.tipo] ? `<div style="font-size:12.5px;color:var(--muted);margin-top:4px">${EXPLICA[d.tipo]}</div>` : "";
 
-    const acoes = document.createElement("div");
-    acoes.className = "div-acoes";
+    let comps = "";
+    if (d.campo) comps += `<div class="compbox"><div class="k">Campo</div><div class="v">${d.campo}</div></div>`;
+    if (d.valor_sienge_campo && d.valor_sienge_campo !== "-")
+        comps += `<div class="compbox"><div class="k">Sienge diz</div><div class="v">${d.valor_sienge_campo}</div></div>`;
+    if (d.valor_nfe_campo && d.valor_nfe_campo !== "-")
+        comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${d.valor_nfe_campo}</div></div>`;
+    if (d.valor_boleto_campo && d.valor_boleto_campo !== "-")
+        comps += `<div class="compbox"><div class="k">Verificado</div><div class="v">${d.valor_boleto_campo}</div></div>`;
+
+    box.innerHTML = `<div class="top"><span class="nome">${NOMES[d.tipo] || d.tipo}</span>${badgeC}${badgeS}</div>
+        ${explica}<div class="comp">${comps}</div>
+        ${d.revisado_por ? `<div class="quem">revisado por <b>${d.revisado_por}</b>${d.revisado_em ? " em " + String(d.revisado_em).replace("T", " ").slice(0, 16) : ""}${d.observacao_revisao ? " — “" + d.observacao_revisao + "”" : ""}</div>` : ""}`;
+
+    const acts = document.createElement("div");
+    acts.className = "acts";
     const obs = document.createElement("input");
-    obs.className = "obs";
-    obs.placeholder = "Observação (opcional)...";
+    obs.className = "obs"; obs.placeholder = "Observação (por que aprovou/rejeitou)...";
     obs.value = d.observacao_revisao || "";
-    acoes.appendChild(obs);
-
-    const bts = document.createElement("div");
-    bts.className = "linha-bt";
     if (st === "PENDENTE") {
         const ap = document.createElement("button");
-        ap.className = "bt-aprovar"; ap.textContent = "✓ Aprovar";
+        ap.className = "bt-sm bt-ap"; ap.textContent = "✓ Aprovar";
         ap.onclick = () => salvar(d, "APROVADO", obs.value);
         const rj = document.createElement("button");
-        rj.className = "bt-rejeitar"; rj.textContent = "✗ Rejeitar";
+        rj.className = "bt-sm bt-rj"; rj.textContent = "✗ Rejeitar";
         rj.onclick = () => salvar(d, "REJEITADO", obs.value);
-        bts.appendChild(ap); bts.appendChild(rj);
+        acts.appendChild(ap); acts.appendChild(rj); acts.appendChild(obs);
     } else {
         const re = document.createElement("button");
-        re.className = "bt-reabrir"; re.textContent = "↩ Reabrir";
+        re.className = "bt-sm bt-re"; re.textContent = "↩ Reabrir";
         re.onclick = () => salvar(d, "PENDENTE", obs.value);
-        bts.appendChild(re);
+        acts.appendChild(re); acts.appendChild(obs);
     }
-    acoes.appendChild(bts);
-    row.appendChild(acoes);
-    return row;
+    box.appendChild(acts);
+    return box;
 }
 
+/* ============ ações ============ */
 async function salvar(d, status, observacao, silencioso) {
     try {
         const r = await fetch("/api/divergencias/" + d.id + "/revisao", {
             method: "POST", headers: H(),
-            body: JSON.stringify({ status: status, observacao: observacao || d.observacao_revisao || null }),
+            body: JSON.stringify({ status, observacao: observacao || d.observacao_revisao || null }),
         });
-        if (!r.ok) throw new Error(await r.text());
-        const novo = await r.json();
-        Object.assign(d, novo);
-        if (!silencioso) toast(status === "APROVADO" ? "Aprovado ✓" : status === "REJEITADO" ? "Rejeitado ✗" : "Reaberto");
-        render();
-    } catch (e) {
-        toast("Erro ao salvar — verifique o login.");
-    }
+        if (!r.ok) throw 0;
+        Object.assign(d, await r.json());
+        montarTitulos();
+        if (!silencioso) {
+            toast(status === "APROVADO" ? "Aprovado ✓" : status === "REJEITADO" ? "Rejeitado ✗" : "Reaberto ↩");
+            renderTudo();
+        }
+    } catch { toast("Erro ao salvar — verifique o login."); }
 }
 
-document.querySelectorAll(".chip").forEach(c => c.onclick = () => {
-    document.querySelectorAll(".chip").forEach(x => x.classList.remove("on"));
-    c.classList.add("on");
-    FILTRO = c.dataset.f;
-    render();
+async function aprovarTitulo(t) {
+    const pendentes = t.divs.filter(d => d.status_revisao === "PENDENTE");
+    for (const d of pendentes) await salvar(d, "APROVADO", null, true);
+    toast("Título " + t.numero + ": " + pendentes.length + " aprovado(s) ✓");
+    // avança para o próximo pendente
+    montarTitulos();
+    const prox = TITULOS.find(x => x.pendentes > 0);
+    if (prox) SELECIONADO = prox.numero;
+    renderTudo();
+}
+
+/* ============ teclado / eventos ============ */
+document.addEventListener("keydown", e => {
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+    const vis = TITULOS.filter(passaFiltro);
+    const i = vis.findIndex(t => t.numero === SELECIONADO);
+    if (e.key === "ArrowDown") { e.preventDefault(); if (i < vis.length - 1) { SELECIONADO = vis[i + 1].numero; renderFila(); renderDetalhe(); } }
+    if (e.key === "ArrowUp") { e.preventDefault(); if (i > 0) { SELECIONADO = vis[i - 1].numero; renderFila(); renderDetalhe(); } }
+    if (e.key.toLowerCase() === "a") { const t = vis[i]; if (t && t.pendentes) aprovarTitulo(t); }
 });
-document.getElementById("busca").oninput = (e) => { BUSCA = e.target.value.toLowerCase(); render(); };
+$("busca").addEventListener("input", e => { BUSCA = e.target.value.toLowerCase(); renderFila(); });
+$("incluir-ok").addEventListener("change", e => { INCLUIR_OK = e.target.checked; montarTitulos(); renderTudo(); });
 
 init();
 </script>
