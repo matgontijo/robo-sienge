@@ -76,6 +76,26 @@ def test_baixar_anexo_sem_anexo(mocker, sienge_client):
     assert result is None
     assert mock_request.call_count == 1
 
+def test_429_rate_limit_espera_e_repete(mocker, sienge_client):
+    mock_request = mocker.patch.object(sienge_client.session, 'request')
+    mock_sleep = mocker.patch('time.sleep')
+
+    resp_429 = MagicMock()
+    resp_429.status_code = 429
+    resp_429.headers = {"Retry-After": "2"}
+
+    resp_ok = MagicMock()
+    resp_ok.status_code = 200
+    resp_ok.json.return_value = {"results": [], "resultSetMetadata": {"count": 0, "offset": 0, "limit": 200}}
+
+    mock_request.side_effect = [resp_429, resp_ok]
+
+    titulos = sienge_client.listar_titulos(date(2024, 1, 1), date(2024, 1, 31))
+
+    assert titulos == []
+    assert mock_request.call_count == 2   # 429 não é fatal: espera e repete
+    assert mock_sleep.call_count >= 1
+
 def test_retry_em_500(mocker, sienge_client):
     mock_request = mocker.patch.object(sienge_client.session, 'request')
     mock_sleep = mocker.patch('time.sleep') # Evita esperar o backoff nos testes

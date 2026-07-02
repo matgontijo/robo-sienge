@@ -1,6 +1,7 @@
 import time
 import base64
 import requests
+from collections import deque
 from datetime import date
 from typing import Optional, List
 from loguru import logger
@@ -8,11 +9,16 @@ from requests.exceptions import RequestException, Timeout
 from models import Titulo
 
 class SiengeClient:
+    # A API do Sienge limita ~200 requisições/min por usuário; ficamos abaixo
+    # para não tomar 429 no meio do ciclo.
+    _MAX_REQ_POR_MINUTO = 170
+
     def __init__(self, base_url: str, username: str, password: str):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self.timeout = 30
+        self._req_times = deque()
         
         # Cria a string em base64 para o Basic Auth
         auth_str = f"{self.username}:{self.password}"
@@ -45,18 +51,43 @@ class SiengeClient:
             return self.base_url.replace("/public/api/v1", "/public/api") + endpoint
         return f"{self.base_url}{endpoint}"
 
+    def _aguardar_janela_rate_limit(self):
+        """Segura o ritmo para não estourar o limite por minuto da API."""
+        agora = time.time()
+        while self._req_times and agora - self._req_times[0] > 60:
+            self._req_times.popleft()
+        if len(self._req_times) >= self._MAX_REQ_POR_MINUTO:
+            espera = 60 - (agora - self._req_times[0]) + 0.2
+            if espera > 0:
+                logger.info(f"Ritmo: {self._MAX_REQ_POR_MINUTO} req/min atingido; aguardando {espera:.1f}s")
+                time.sleep(espera)
+        self._req_times.append(time.time())
+
     def _request_with_retry(self, method: str, endpoint: str, **kwargs) -> requests.Response:
         url = self._url(endpoint)
         retries = 3
         backoff_factor = 1  # 1s, 2s, 4s
+        esperas_429 = 0
 
-        for attempt in range(retries):
+        attempt = 0
+        while attempt < retries:
+            self._aguardar_janela_rate_limit()
             start_time = time.time()
             try:
                 response = self.session.request(method, url, timeout=self.timeout, **kwargs)
                 elapsed = time.time() - start_time
                 logger.info(f"{method} {endpoint} | Status: {response.status_code} | Time: {elapsed:.2f}s")
-                
+
+                # 429: rate limit — espera (Retry-After se houver) e tenta de novo,
+                # sem consumir as tentativas de erro
+                if response.status_code == 429 and esperas_429 < 6:
+                    esperas_429 += 1
+                    ra = str(response.headers.get("Retry-After") or "")
+                    espera = int(ra) if ra.isdigit() else min(60, 10 * esperas_429)
+                    logger.warning(f"429 (rate limit) em {endpoint}; aguardando {espera}s (tentativa {esperas_429}/6)...")
+                    time.sleep(espera)
+                    continue
+
                 # Se for 4xx, é erro do cliente/negócio, não faz sentido tentar de novo
                 if 400 <= response.status_code < 500:
                     response.raise_for_status()
@@ -77,6 +108,9 @@ class SiengeClient:
                 sleep_time = backoff_factor * (2 ** attempt)
                 logger.warning(f"Erro na requisição {method} {endpoint}: {str(e)}. Retentando em {sleep_time}s...")
                 time.sleep(sleep_time)
+            attempt += 1
+
+        raise RequestException(f"Falha na requisição {method} {endpoint}: tentativas esgotadas")
 
     def listar_titulos(
         self,
