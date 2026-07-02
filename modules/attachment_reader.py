@@ -1,9 +1,12 @@
 import io
+import os
 import re
 import time
 import json
 import hashlib
 import base64
+import threading
+from collections import deque
 from datetime import date, timedelta
 from typing import Optional
 
@@ -47,8 +50,16 @@ def decodificar_linha_digitavel(linha: str) -> Optional[dict]:
 
 
 class AttachmentReader:
+    # Free tier do Gemini: ~10 req/min — ritmo global (compartilhado entre threads)
+    _GEMINI_MAX_POR_MINUTO = 8
+    _gemini_lock = threading.Lock()
+    _gemini_req_times = deque()
+
+    # Custo/cota: analisa no máximo N páginas por PDF (chave/boleto ficam no início)
+    _MAX_PAGINAS_OCR = 4
+
     def __init__(self, anthropic_api_key: str = None, gemini_api_key: str = None,
-                 gemini_model: str = "gemini-2.5-flash"):
+                 gemini_model: str = "gemini-2.5-flash", cache_path: str = None):
         # Provedor de OCR: Gemini (gratuito) tem prioridade quando configurado;
         # senão usa Anthropic (Claude Haiku). Sem nenhum, o robô segue sem OCR.
         self.gemini_api_key = gemini_api_key or None
@@ -64,6 +75,75 @@ class AttachmentReader:
                     + (f" ({self.gemini_model})" if self.provider == "gemini" else ""))
         self.cache = {}
         self.cache_boleto = {}
+
+        # Cache persistente em disco: cada anexo é lido pelo OCR uma única vez;
+        # execuções seguintes reutilizam o resultado (hash do PDF -> dados).
+        self._cache_path = cache_path
+        self._cache_disk_lock = threading.Lock()
+        self._carregar_cache_disco()
+
+    # ------------------------------------------------------------------
+    # Cache persistente
+    # ------------------------------------------------------------------
+    def _carregar_cache_disco(self):
+        if not self._cache_path or not os.path.exists(self._cache_path):
+            return
+        try:
+            with open(self._cache_path, encoding="utf-8") as f:
+                data = json.load(f)
+            self.cache.update(data.get("chaves", {}))
+            for h, b in (data.get("boletos") or {}).items():
+                if b is None:
+                    self.cache_boleto[h] = None
+                else:
+                    venc = b.get("data_vencimento")
+                    self.cache_boleto[h] = Boleto(
+                        codigo_barras=b.get("codigo_barras", ""),
+                        cnpj_beneficiario=b.get("cnpj_beneficiario", ""),
+                        nome_beneficiario=b.get("nome_beneficiario", ""),
+                        valor=float(b.get("valor") or 0.0),
+                        data_vencimento=date.fromisoformat(venc) if venc else None,
+                    )
+            logger.info(f"Cache de OCR carregado: {len(self.cache)} chaves, "
+                        f"{len(self.cache_boleto)} boletos ({self._cache_path})")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao carregar cache de OCR ({self._cache_path}): {e}")
+
+    def _salvar_cache_disco(self):
+        if not self._cache_path:
+            return
+        try:
+            with self._cache_disk_lock:
+                boletos = {}
+                for h, b in self.cache_boleto.items():
+                    boletos[h] = None if b is None else {
+                        "codigo_barras": b.codigo_barras,
+                        "cnpj_beneficiario": b.cnpj_beneficiario,
+                        "nome_beneficiario": b.nome_beneficiario,
+                        "valor": b.valor,
+                        "data_vencimento": b.data_vencimento.isoformat() if b.data_vencimento else None,
+                    }
+                tmp = self._cache_path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump({"chaves": self.cache, "boletos": boletos}, f, ensure_ascii=False)
+                os.replace(tmp, self._cache_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao salvar cache de OCR: {e}")
+
+    def _aguardar_janela_gemini(self):
+        """Segura o ritmo global (todas as threads) abaixo do limite do free tier."""
+        while True:
+            with self._gemini_lock:
+                agora = time.time()
+                fila = self._gemini_req_times
+                while fila and agora - fila[0] > 60:
+                    fila.popleft()
+                if len(fila) < self._GEMINI_MAX_POR_MINUTO:
+                    fila.append(agora)
+                    return
+                espera = 60 - (agora - fila[0]) + 0.5
+            logger.debug(f"Ritmo Gemini: aguardando {espera:.1f}s")
+            time.sleep(max(espera, 0.5))
 
         self.system_prompt_boleto = """Você é um extrator de dados de boletos bancários brasileiros.
 Localize, se houver, os dados do boleto na imagem e retorne APENAS JSON válido, sem markdown:
@@ -167,12 +247,23 @@ REGRAS OBRIGATÓRIAS:
                 },
             }
             try:
-                resp = requests.post(url, json=body, timeout=90)
-                if resp.status_code == 429:
-                    # Free tier: limite por minuto — espera e tenta 1x de novo
-                    logger.warning("Gemini 429 (rate limit do free tier); aguardando 30s...")
-                    time.sleep(30)
+                for tentativa in range(5):
+                    self._aguardar_janela_gemini()
                     resp = requests.post(url, json=body, timeout=90)
+                    if resp.status_code != 429:
+                        break
+                    # 429: respeita o retryDelay sugerido pelo Google, se vier
+                    espera = 30
+                    try:
+                        for det in resp.json().get("error", {}).get("details", []):
+                            rd = str(det.get("retryDelay", ""))
+                            if rd.endswith("s") and rd[:-1].replace(".", "").isdigit():
+                                espera = min(120, float(rd[:-1]) + 1)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    logger.warning(f"Gemini 429 (free tier); aguardando {espera:.0f}s "
+                                   f"(tentativa {tentativa + 1}/5)...")
+                    time.sleep(espera)
                 resp.raise_for_status()
                 data = resp.json()
                 parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", [])
@@ -244,21 +335,23 @@ REGRAS OBRIGATÓRIAS:
             self.cache[pdf_hash] = None
             return None
             
-        # Itera por página
-        for i, img in enumerate(imagens):
-            logger.info(f"Enviando página {i+1}/{len(imagens)} para análise do Claude...")
+        # Itera por página (limitado para poupar cota do OCR)
+        for i, img in enumerate(imagens[:self._MAX_PAGINAS_OCR]):
+            logger.info(f"Enviando página {i+1}/{len(imagens)} para análise do OCR...")
             chave = self._chamar_claude(img)
-            
+
             if chave:
                 if self._validar_chave_nfe(chave):
                     logger.success(f"Chave válida encontrada na página {i+1}: {chave}")
                     self.cache[pdf_hash] = chave
+                    self._salvar_cache_disco()
                     return chave
                 else:
                     logger.warning(f"Chave encontrada na página {i+1} porém é INVÁLIDA (Dígito verificador falhou): {chave}")
-                    
+
         logger.warning("Não foi possível extrair chave válida de nenhuma das páginas do PDF.")
         self.cache[pdf_hash] = None
+        self._salvar_cache_disco()
         return None
 
     def _chamar_claude_boleto(self, image_bytes: bytes) -> Optional[dict]:
@@ -286,7 +379,7 @@ REGRAS OBRIGATÓRIAS:
         if pdf_hash in self.cache_boleto:
             return self.cache_boleto[pdf_hash]
 
-        for i, img in enumerate(self._pdf_para_imagens(pdf_bytes)):
+        for i, img in enumerate(self._pdf_para_imagens(pdf_bytes)[:self._MAX_PAGINAS_OCR]):
             dados = self._chamar_claude_boleto(img)
             if not dados or not dados.get("tem_boleto"):
                 continue
@@ -324,8 +417,10 @@ REGRAS OBRIGATÓRIAS:
                 f"venc={boleto.data_vencimento} cnpj_benef={boleto.cnpj_beneficiario}"
             )
             self.cache_boleto[pdf_hash] = boleto
+            self._salvar_cache_disco()
             return boleto
 
         logger.info("Nenhum boleto detectado no anexo.")
         self.cache_boleto[pdf_hash] = None
+        self._salvar_cache_disco()
         return None

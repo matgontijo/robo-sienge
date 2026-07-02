@@ -136,9 +136,13 @@ def processar_titulo(
                 if not titulo.fornecedor_cnpj and titulo.nf_cnpj_emitente:
                     titulo.fornecedor_cnpj = titulo.nf_cnpj_emitente
 
-        # c. Fallback: OCR da chave no anexo + Sefaz, se o /nfes não trouxe a nota
+        # c. Fallback: OCR da chave no anexo + Sefaz, se o /nfes não trouxe a nota.
+        # Chave de acesso (44 dígitos) só existe em NF-e de PRODUTO — não gasta
+        # OCR caçando chave em NFSE/medição/adiantamento.
         if nfe_data is None:
-            if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None:
+            tipo_doc = (titulo.tipo_documento or "").upper()
+            pode_ter_chave = tipo_doc.startswith("NF") and "NFSE" not in tipo_doc
+            if not titulo.chave_nfe and titulo.attachment_bytes and reader is not None and pode_ter_chave:
                 titulo.chave_nfe = reader.extrair_chave_nfe(titulo.attachment_bytes)
             if titulo.chave_nfe and sefaz_cli is not None:
                 try:
@@ -202,9 +206,11 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
 
         sienge_cli = _init_cliente("sienge", lambda: SiengeClient(
             config.SIENGE_BASE_URL, config.SIENGE_USERNAME, config.SIENGE_PASSWORD))
+        import os as _os
         reader = _init_cliente("ocr", lambda: AttachmentReader(
             config.ANTHROPIC_API_KEY, gemini_api_key=config.GEMINI_API_KEY,
-            gemini_model=config.GEMINI_MODEL))
+            gemini_model=config.GEMINI_MODEL,
+            cache_path=_os.path.join(config.OUTPUT_DIR, "ocr_cache.json")))
         sefaz_cli = _init_cliente("sefaz", lambda: SefazClient(
             config.SEFAZ_CERT_PATH, config.SEFAZ_CERT_PASSWORD, config.SEFAZ_CNPJ, config.SEFAZ_AMBIENTE))
         danfe_gen = DanfeGenerator()
