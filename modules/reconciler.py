@@ -186,6 +186,18 @@ class Reconciler:
         if boleto_anexo is not None:
             divergencias.extend(self._reconciliar_boleto_anexo(titulo, nfe_data, boleto_anexo))
 
+        # REGRA 8 - SEM FORMA DE PAGAMENTO (parcela não entra na remessa)
+        if info_pagamento is not None and not (info_pagamento.forma_pagamento or "").strip():
+            divergencias.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="FORMA_PAGAMENTO_AUSENTE",
+                campo="Forma de Pagamento",
+                valor_sienge="(vazio)",
+                valor_nfe="-",
+                valor_boleto="Cadastrar a forma de pagamento da parcela no Sienge",
+                criticidade="CRITICA", danfe_path=titulo.danfe_path,
+            ))
+
         # CONFERÊNCIA DOS DADOS DE PAGAMENTO (anti-fraude: destino x fornecedor)
         if info_pagamento is not None:
             divergencias.extend(

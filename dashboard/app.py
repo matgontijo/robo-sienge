@@ -101,6 +101,7 @@ NOMES_TIPO_PT = {
     "ANEXO_ILEGIVEL": "Anexo nao lido (OCR pendente)",
     "PIX_NAO_VERIFICAVEL": "Chave Pix nao verificavel",
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompativel",
+    "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 }
 
