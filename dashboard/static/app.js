@@ -101,6 +101,9 @@ async function initDashboard() {
     await fetchHistorico();
     atualizarBadgeConferencia();
 
+    // O trabalho do dia a dia é aprovar: abre direto na Conferência
+    switchMainTab('conferencia');
+
     // Auto refresh status se a ultima tiver rodando
     setInterval(() => {
         const row = document.querySelector("#tbody-historico tr:first-child .badge.RODANDO");
@@ -483,7 +486,7 @@ function switchMainTab(viewName) {
     if (viewName === 'conferencia') {
         // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
         const frame = document.getElementById('frame-conferencia');
-        if (frame && !frame.src) frame.src = '/static/revisao.html';
+        if (frame && !frame.src) frame.src = '/static/revisao.html?v=3';
         atualizarBadgeConferencia();
     }
 }
