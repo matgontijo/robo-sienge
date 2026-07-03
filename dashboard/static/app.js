@@ -1,4 +1,26 @@
 let token = sessionStorage.getItem("auth_token");
+
+const NOMES_TIPO = {
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Destino do pagamento ≠ CNPJ do credor",
+    "CNPJ_DIVERGENTE": "CNPJ da nota ≠ credor do título",
+    "VALOR_DIVERGENTE": "Valor do título ≠ valor da nota",
+    "LIQUIDO_BRUTO_DIVERGENTE": "Líquido ≠ bruto − retenções (via NF)",
+    "LIQUIDO_PARCELA_DIVERGENTE": "Parcela − retenções ≠ valor a pagar",
+    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto ≠ valor a pagar",
+    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto × forma (próprio/outros)",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto ≠ título",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito mesmo banco",
+    "IMPOSTO_DIVERGENTE": "Imposto retido ≠ destacado na nota",
+    "CHAVE_NFE_INVALIDA": "Chave de NF-e inválida",
+    "BOLETO_NAO_ENCONTRADO": "Boleto não encontrado no DDA",
+    "SEM_ANEXO": "Título sem anexo no Sienge",
+    "ANEXO_ILEGIVEL": "Anexo não lido (OCR pendente)",
+    "PIX_NAO_VERIFICAVEL": "Chave Pix não verificável",
+    "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
+    "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
+    "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor não aparece na NF anexada",
+    "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
+};
 let chartInstance = null;
 let currentExecId = null;
 let eventSource = null;
@@ -66,8 +88,8 @@ async function initDashboard() {
             userRole = meData.role;
             
             if (userRole !== 'ADMIN') {
-                const confTabs = document.querySelectorAll('.tab-btn');
-                if(confTabs.length > 1) confTabs[1].style.display = 'none';
+                const nav = document.getElementById('nav-settings');
+                if (nav) nav.style.display = 'none';
             }
             if (userRole === 'LEITURA') {
                 document.querySelectorAll('.header-actions button').forEach(b => b.style.display = 'none');
@@ -77,7 +99,8 @@ async function initDashboard() {
 
     await fetchStats();
     await fetchHistorico();
-    
+    atualizarBadgeConferencia();
+
     // Auto refresh status se a ultima tiver rodando
     setInterval(() => {
         const row = document.querySelector("#tbody-historico tr:first-child .badge.RODANDO");
@@ -86,6 +109,23 @@ async function initDashboard() {
             fetchHistorico(false); // atualiza sem recriar
         }
     }, 5000);
+    setInterval(atualizarBadgeConferencia, 30000);
+}
+
+// Badge no menu: críticas ainda pendentes de revisão no último ciclo concluído
+async function atualizarBadgeConferencia() {
+    try {
+        const r = await fetch("/api/execucoes?limit=10", { headers: getHeaders() });
+        if (!r.ok) return;
+        const done = (await r.json()).filter(e => e.status === "CONCLUIDO");
+        if (!done.length) return;
+        const divs = await (await fetch(`/api/execucoes/${done[0].id}/divergencias`, { headers: getHeaders() })).json();
+        const pend = divs.filter(d => (d.status_revisao || "PENDENTE") === "PENDENTE" && d.criticidade === "CRITICA").length;
+        const badge = document.getElementById("nav-conf-badge");
+        if (!badge) return;
+        badge.style.display = pend > 0 ? "" : "none";
+        badge.textContent = pend;
+    } catch (e) { /* silencioso */ }
 }
 
 async function fetchStats() {
@@ -135,18 +175,20 @@ function renderChart(dados) {
             labels: labels,
             datasets: [
                 {
-                    label: 'Títulos Processados',
+                    label: 'Títulos processados',
                     data: dsTitulos,
-                    backgroundColor: 'rgba(13, 110, 253, 0.5)',
-                    borderColor: 'rgb(13, 110, 253)',
-                    borderWidth: 1
+                    backgroundColor: 'rgba(15, 118, 110, 0.45)',
+                    borderColor: 'rgb(15, 118, 110)',
+                    borderWidth: 1.5,
+                    borderRadius: 5
                 },
                 {
-                    label: 'Divergências Encontradas',
+                    label: 'Apontamentos',
                     data: dsDiverg,
-                    backgroundColor: 'rgba(220, 53, 69, 0.5)',
-                    borderColor: 'rgb(220, 53, 69)',
-                    borderWidth: 1
+                    backgroundColor: 'rgba(198, 57, 47, 0.4)',
+                    borderColor: 'rgb(198, 57, 47)',
+                    borderWidth: 1.5,
+                    borderRadius: 5
                 }
             ]
         },
@@ -308,7 +350,7 @@ function renderDivergencias() {
         tbody.innerHTML += `<tr>
             <td>${d.titulo_numero}</td>
             <td>${d.fornecedor_nome}</td>
-            <td>${d.tipo}</td>
+            <td>${NOMES_TIPO[d.tipo] || d.tipo}</td>
             <td>${d.campo}</td>
             <td>${d.valor_sienge_campo || "-"}</td>
             <td>${d.valor_nfe_campo || d.valor_boleto_campo || "-"}</td>
@@ -415,16 +457,34 @@ async function rodarComRelatorio(input) {
 // CONFIGURAÇÕES
 // ==========================================
 
+const VIEW_TITULOS = {
+    dashboard:    ["Visão geral", "Acompanhe os ciclos de conferência antes da remessa de pagamento."],
+    conferencia:  ["Conferência", "Aprove ou rejeite cada apontamento — ↑↓ navegam, A aprova o título."],
+    presentation: ["Apresentação", "Status do robô, pendências, custos e resultados — pronta para reunião."],
+    settings:     ["Configurações", "Credenciais das integrações. Alterações valem a partir do próximo ciclo."],
+};
+
 function switchMainTab(viewName) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-    
-    document.getElementById('view-dashboard').style.display = viewName === 'dashboard' ? 'block' : 'none';
-    document.getElementById('view-settings').style.display = viewName === 'settings' ? 'block' : 'none';
-    document.getElementById('view-presentation').style.display = viewName === 'presentation' ? 'block' : 'none';
-    
-    if (viewName === 'settings') {
-        fetchConfig();
+    const nav = document.getElementById('nav-' + viewName);
+    if (nav) nav.classList.add('active');
+    else if (typeof event !== "undefined" && event.currentTarget) event.currentTarget.classList.add('active');
+
+    ['dashboard', 'conferencia', 'presentation', 'settings'].forEach(v => {
+        const el = document.getElementById('view-' + v);
+        if (el) el.style.display = viewName === v ? 'block' : 'none';
+    });
+
+    const [t, s] = VIEW_TITULOS[viewName] || ["", ""];
+    document.getElementById('view-title').innerText = t;
+    document.getElementById('view-sub').innerText = s;
+
+    if (viewName === 'settings') fetchConfig();
+    if (viewName === 'conferencia') {
+        // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
+        const frame = document.getElementById('frame-conferencia');
+        if (frame && !frame.src) frame.src = '/static/revisao.html';
+        atualizarBadgeConferencia();
     }
 }
 
