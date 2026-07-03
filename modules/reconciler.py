@@ -268,7 +268,10 @@ class Reconciler:
         divs: List[Divergencia] = []
         if not nf_texto or not nf_texto.get("texto_confiavel"):
             return divs
-        na_nota = {k: v for k, v in (nf_texto.get("impostos") or {}).items() if k != "VALOR_LIQUIDO"}
+        impostos_nf = nf_texto.get("impostos") or {}
+        na_nota = {k: v for k, v in impostos_nf.items()
+                   if k not in ("VALOR_LIQUIDO", "_com_retencao")}
+        com_retencao = set(impostos_nf.get("_com_retencao") or [])
         if not na_nota:
             return divs
 
@@ -281,7 +284,11 @@ class Reconciler:
         for tributo, v_nota in na_nota.items():
             v_tit = no_titulo.get(tributo)
             if v_tit is None:
-                # nota destacou e o título não reteve nada desse tributo
+                # nota destacou e o título não reteve nada desse tributo.
+                # ISS só conta quando a nota diz explicitamente "retido/retenção"
+                # (NFS-e sempre exibe o ISS devido, mesmo sem retenção pelo tomador)
+                if tributo == "ISS" and "ISS" not in com_retencao:
+                    continue
                 if v_nota > 1.0 and tributo in ("INSS", "ISS", "IR", "PIS", "COFINS", "CSLL"):
                     divs.append(Divergencia(
                         titulo_id=titulo.id, titulo_numero=titulo.numero,

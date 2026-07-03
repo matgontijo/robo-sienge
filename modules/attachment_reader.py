@@ -251,6 +251,8 @@ REGRAS OBRIGATÓRIAS:
         se separar; nesses casos o tributo simplesmente não é capturado.
         """
         achados = {}
+        com_retencao = set()  # tributos cuja linha menciona retenção explícita
+        rx_ret = re.compile(r"RET(?:ID|EN[ÇC])", re.I)
         for linha in txt.splitlines():
             valores = cls._RE_DINHEIRO.findall(linha)
             if not valores:
@@ -264,7 +266,10 @@ REGRAS OBRIGATÓRIAS:
                     # guarda o primeiro valor visto para o tributo (linha de destaque)
                     if nome not in achados and valor > 0:
                         achados[nome] = valor
+                        if rx_ret.search(linha):
+                            com_retencao.add(nome)
                     break
+        achados["_com_retencao"] = sorted(com_retencao)
         return achados
 
     # UFs válidas do IBGE (posições 1-2 da chave) e modelos de documento fiscal
