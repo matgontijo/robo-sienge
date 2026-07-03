@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Robô de Conferência · Grupo Garden</title>
-    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -76,6 +76,26 @@
 
                 <!-- ========== VISÃO GERAL ========== -->
                 <div id="view-dashboard">
+
+                    <!-- Cockpit da remessa: a resposta de "posso pagar?" -->
+                    <div class="hero-remessa" id="hero-remessa" style="display:none">
+                        <div class="hr-main">
+                            <div class="hr-eyebrow">Remessa da semana · <span id="hr-ciclo">–</span></div>
+                            <div class="hr-status" id="hr-status">–</div>
+                            <div class="hr-sub" id="hr-sub">–</div>
+                            <div class="hr-bar"><div id="hr-bar-fill"></div></div>
+                            <div class="hr-meta" id="hr-meta">–</div>
+                        </div>
+                        <div class="hr-kpis">
+                            <div class="hr-kpi"><b id="hr-liberados">–</b><span>títulos liberados</span></div>
+                            <div class="hr-kpi crit"><b id="hr-criticas">–</b><span>críticas pendentes</span></div>
+                            <div class="hr-kpi"><b id="hr-valor-risco">–</b><span>valor sob crítica</span></div>
+                        </div>
+                        <div class="hr-cta">
+                            <button class="btn-hero" onclick="switchMainTab('conferencia')">Revisar agora →</button>
+                        </div>
+                    </div>
+
                     <div class="cards-row">
                         <div class="card" id="card-ultima">
                             <div class="card-title">Última execução</div>
@@ -285,6 +305,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>

@@ -206,12 +206,29 @@ def download_danfe(execucao_id: int, path: str):
         
     return FileResponse(path=abs_path, filename=os.path.basename(abs_path), media_type="application/pdf")
 
+def _limpar_execucoes_orfas():
+    """Execução 'RODANDO' sem log novo há 15+ min é zumbi (processo caiu/foi
+    morto) — marca como ABORTADO para não travar novas execuções com 409."""
+    import datetime as _dt
+    agora = _dt.datetime.now()
+    for e in db.get_execucoes(limit=20):
+        if e.status != "RODANDO":
+            continue
+        logs = db.get_logs(e.id)
+        ultimo = logs[-1].timestamp if logs else e.iniciado_em
+        if ultimo and (agora - ultimo).total_seconds() > 900:
+            db.atualizar_execucao(e.id, status="ABORTADO", concluido_em=agora,
+                                  erro_mensagem="Processo interrompido — marcado automaticamente como abortado")
+
+_limpar_execucoes_orfas()  # limpeza na subida do painel
+
 @app.post("/api/execucoes/iniciar", dependencies=[Depends(get_current_user)])
 def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_current_user)):
     if current_user.role == "LEITURA":
         raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
-        
-    # Verifica se já tem alguma execução rodando
+
+    # Verifica se já tem alguma execução rodando (limpando zumbis antes)
+    _limpar_execucoes_orfas()
     execs = db.get_execucoes(limit=10)
     for e in execs:
         if e.status == "RODANDO":
@@ -254,7 +271,8 @@ def iniciar_execucao_relatorio(
     if ext not in (".xlsx", ".xlsm", ".pdf"):
         raise HTTPException(status_code=400, detail="Arquivo inválido. Envie um .xlsx ou .pdf")
 
-    # Já existe execução rodando?
+    # Já existe execução rodando? (limpando zumbis antes)
+    _limpar_execucoes_orfas()
     for e in db.get_execucoes(limit=10):
         if e.status == "RODANDO":
             raise HTTPException(status_code=409, detail="Já existe uma execução em andamento")

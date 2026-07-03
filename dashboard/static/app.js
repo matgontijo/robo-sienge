@@ -115,19 +115,66 @@ async function initDashboard() {
     setInterval(atualizarBadgeConferencia, 30000);
 }
 
-// Badge no menu: críticas ainda pendentes de revisão no último ciclo concluído
+// Badge no menu + cockpit da remessa: estado da revisão do último ciclo concluído
+const moedaBR = v => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
 async function atualizarBadgeConferencia() {
     try {
         const r = await fetch("/api/execucoes?limit=10", { headers: getHeaders() });
         if (!r.ok) return;
         const done = (await r.json()).filter(e => e.status === "CONCLUIDO");
         if (!done.length) return;
-        const divs = await (await fetch(`/api/execucoes/${done[0].id}/divergencias`, { headers: getHeaders() })).json();
-        const pend = divs.filter(d => (d.status_revisao || "PENDENTE") === "PENDENTE" && d.criticidade === "CRITICA").length;
+        const exec = done[0];
+        const divs = await (await fetch(`/api/execucoes/${exec.id}/divergencias`, { headers: getHeaders() })).json();
+
+        const pendentes = divs.filter(d => (d.status_revisao || "PENDENTE") === "PENDENTE");
+        const pendCrit = pendentes.filter(d => d.criticidade === "CRITICA");
+        const revisadas = divs.length - pendentes.length;
+
+        // badge do menu
         const badge = document.getElementById("nav-conf-badge");
-        if (!badge) return;
-        badge.style.display = pend > 0 ? "" : "none";
-        badge.textContent = pend;
+        if (badge) {
+            badge.style.display = pendCrit.length > 0 ? "" : "none";
+            badge.textContent = pendCrit.length;
+        }
+
+        // cockpit da remessa
+        const hero = document.getElementById("hero-remessa");
+        if (!hero) return;
+        hero.style.display = "";
+        document.getElementById("hr-ciclo").innerText =
+            "ciclo #" + exec.id + " · " + new Date(exec.iniciado_em).toLocaleDateString("pt-BR");
+
+        // títulos distintos com crítica pendente e valor sob crítica
+        const titulosCrit = new Map();
+        pendCrit.forEach(d => { if (!titulosCrit.has(d.titulo_numero)) titulosCrit.set(d.titulo_numero, d.valor_sienge || 0); });
+        const valorRisco = [...titulosCrit.values()].reduce((a, b) => a + b, 0);
+        const titulosComPend = new Set(pendentes.map(d => d.titulo_numero)).size;
+        const liberados = (exec.total_titulos || 0) - titulosComPend;
+
+        const st = document.getElementById("hr-status");
+        const sub = document.getElementById("hr-sub");
+        if (pendCrit.length > 0) {
+            st.className = "hr-status crit";
+            st.innerText = "Remessa bloqueada";
+            sub.innerText = pendCrit.length + " apontamento(s) crítico(s) aguardam sua decisão antes do pagamento.";
+        } else if (pendentes.length > 0) {
+            st.className = "hr-status warn";
+            st.innerText = "Quase lá";
+            sub.innerText = "Sem críticas pendentes — restam " + pendentes.length + " ponto(s) de atenção para revisar.";
+        } else {
+            st.className = "hr-status ok";
+            st.innerText = "Remessa liberada ✓";
+            sub.innerText = "Todos os apontamentos do ciclo foram revisados. Pode montar a remessa.";
+        }
+
+        const pct = divs.length ? Math.round(100 * revisadas / divs.length) : 100;
+        document.getElementById("hr-bar-fill").style.width = pct + "%";
+        document.getElementById("hr-meta").innerText =
+            revisadas + " de " + divs.length + " apontamentos revisados (" + pct + "%)";
+        document.getElementById("hr-liberados").innerText = liberados + "/" + (exec.total_titulos || 0);
+        document.getElementById("hr-criticas").innerText = pendCrit.length;
+        document.getElementById("hr-valor-risco").innerText = moedaBR(valorRisco);
     } catch (e) { /* silencioso */ }
 }
 
