@@ -19,6 +19,9 @@ const NOMES_TIPO = {
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
     "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor não aparece na NF anexada",
+    "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
+    "IMPOSTO_NAO_RETIDO": "Nota destaca retenção que o título não lançou",
+    "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
 let chartInstance = null;
@@ -533,7 +536,7 @@ function switchMainTab(viewName) {
     if (viewName === 'conferencia') {
         // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
         const frame = document.getElementById('frame-conferencia');
-        if (frame && !frame.src) frame.src = '/static/revisao.html?v=3';
+        if (frame && !frame.src) frame.src = '/static/revisao.html?v=5';
         atualizarBadgeConferencia();
     }
 }

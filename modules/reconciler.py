@@ -237,7 +237,108 @@ class Reconciler:
             divergencias.extend(
                 self._reconciliar_impostos(titulo, nfe_data, impostos_destacados or {}, retencoes or {}))
 
+        # IMPOSTOS x TEXTO DA NF + SANIDADE DE ALÍQUOTAS
+        divergencias.extend(
+            self._reconciliar_impostos_nf(titulo, retencoes or {}, nf_texto))
+        if info_pagamento is not None:
+            divergencias.extend(
+                self._reconciliar_aliquotas(titulo, info_pagamento, retencoes or {}))
+
         return divergencias
+
+    # Nome canônico dos tributos lançados no Sienge (taxId livre, ex. "INSS 2631")
+    @staticmethod
+    def _tributo_canonico(nome: str) -> Optional[str]:
+        n = (nome or "").upper()
+        if "INSS" in n: return "INSS"
+        if "ISS" in n: return "ISS"
+        if "CAUC" in n or "CAUÇ" in n: return "CAUCAO"
+        if "COFINS" in n: return "COFINS"
+        if "CSLL" in n: return "CSLL"
+        if "PIS" in n: return "PIS"
+        if n.startswith("IR") or " IR" in n or "IRRF" in n: return "IR"
+        return None
+
+    def _reconciliar_impostos_nf(self, titulo: Titulo, retencoes: dict, nf_texto) -> List[Divergencia]:
+        """
+        Impostos escritos na própria NF (camada de texto) x retenções do título:
+          - mesmo tributo com valores diferentes -> IMPOSTO_NF_DIVERGENTE
+          - nota destaca retenção que o título NÃO lançou -> IMPOSTO_NAO_RETIDO
+        """
+        divs: List[Divergencia] = []
+        if not nf_texto or not nf_texto.get("texto_confiavel"):
+            return divs
+        na_nota = {k: v for k, v in (nf_texto.get("impostos") or {}).items() if k != "VALOR_LIQUIDO"}
+        if not na_nota:
+            return divs
+
+        no_titulo = {}
+        for nome, valor in (retencoes or {}).items():
+            can = self._tributo_canonico(nome)
+            if can:
+                no_titulo[can] = no_titulo.get(can, 0.0) + float(valor or 0)
+
+        for tributo, v_nota in na_nota.items():
+            v_tit = no_titulo.get(tributo)
+            if v_tit is None:
+                # nota destacou e o título não reteve nada desse tributo
+                if v_nota > 1.0 and tributo in ("INSS", "ISS", "IR", "PIS", "COFINS", "CSLL"):
+                    divs.append(Divergencia(
+                        titulo_id=titulo.id, titulo_numero=titulo.numero,
+                        tipo="IMPOSTO_NAO_RETIDO",
+                        campo=f"Retenção {tributo}",
+                        valor_sienge="não lançado no título",
+                        valor_nfe=f"{v_nota:.2f} (destacado na nota)",
+                        valor_boleto="Conferir se a retenção deveria ter sido lançada",
+                        criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                    ))
+            elif abs(v_tit - v_nota) > 0.05:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="IMPOSTO_NF_DIVERGENTE",
+                    campo=f"Retenção {tributo}",
+                    valor_sienge=f"{v_tit:.2f} (título)",
+                    valor_nfe=f"{v_nota:.2f} (nota)",
+                    valor_boleto="-",
+                    criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                ))
+        return divs
+
+    # Tetos de retenção sobre a PARCELA bruta, com folga de ~1,5x sobre a
+    # alíquota legal — a parcela pode ser menor que a nota (medições parciais),
+    # o que infla a alíquota implícita. O alvo é erro grosseiro de digitação
+    # (um dígito a mais = 10x), não a variação normal.
+    _TETO_ALIQUOTA = {"INSS": 0.165, "ISS": 0.08, "IR": 0.075,
+                      "PIS": 0.10, "COFINS": 0.12, "CSLL": 0.075, "CAUCAO": 0.16}
+
+    def _reconciliar_aliquotas(self, titulo: Titulo, info, retencoes: dict) -> List[Divergencia]:
+        """
+        Sanidade das retenções: alíquota implícita (retenção / parcela bruta)
+        acima do teto usual do tributo = provável erro de digitação no valor.
+        Só para títulos de parcela única (base inequívoca).
+        """
+        divs: List[Divergencia] = []
+        base = float(info.valor or 0)
+        if not base or (info.total_parcelas and info.total_parcelas > 1):
+            return divs
+        for nome, valor in (retencoes or {}).items():
+            v = float(valor or 0)
+            if v <= 0:
+                continue
+            can = self._tributo_canonico(nome) or "OUTRO"
+            teto = self._TETO_ALIQUOTA.get(can, 0.25)
+            aliquota = v / base
+            if aliquota > teto:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="RETENCAO_ALIQUOTA_SUSPEITA",
+                    campo=f"Retenção {nome}",
+                    valor_sienge=f"{v:.2f} = {aliquota * 100:.1f}% da parcela {base:.2f}",
+                    valor_nfe=f"teto usual {teto * 100:.1f}%",
+                    valor_boleto="Conferir o valor lançado da retenção",
+                    criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                ))
+        return divs
 
     def _reconciliar_linha_digitavel(self, titulo: Titulo, info) -> List[Divergencia]:
         """

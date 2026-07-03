@@ -227,6 +227,45 @@ REGRAS OBRIGATÓRIAS:
     # ------------------------------------------------------------------
     _RE_CNPJ = re.compile(r"\d{2}[\s.]?\d{3}[\s.]?\d{3}[\s./]?\d{4}[\s-]?\d{2}")
     _RE_LINHA = re.compile(r"\d[\d.\s]{40,70}\d")
+    _RE_DINHEIRO = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
+
+    # Rótulos de tributos em NFS-e/DANFE -> nome canônico (ordem importa: INSS antes de ISS)
+    _TRIBUTOS_LABELS = [
+        ("INSS", re.compile(r"\bINSS\b", re.I)),
+        ("ISS", re.compile(r"\bISS(?:QN)?\b", re.I)),
+        ("IR", re.compile(r"\bIR(?:RF|PJ)?\b", re.I)),
+        ("PIS", re.compile(r"\bPIS\b", re.I)),
+        ("COFINS", re.compile(r"\bCOFINS\b", re.I)),
+        ("CSLL", re.compile(r"\bCSLL\b", re.I)),
+        ("CAUCAO", re.compile(r"CAU[ÇC][AÃ]O", re.I)),
+    ]
+    _RE_LIQUIDO = re.compile(r"VALOR\s+L[IÍ]QUIDO", re.I)
+
+    @classmethod
+    def _impostos_do_texto(cls, txt: str) -> dict:
+        """
+        Varre o texto da NF linha a linha e captura o valor monetário que
+        acompanha cada rótulo de tributo (mesma linha). Retorna
+        {tributo: valor, ..., 'VALOR_LIQUIDO': x} — só o que estiver legível.
+        Conservador: em PDFs com layout em colunas o rótulo e o número podem
+        se separar; nesses casos o tributo simplesmente não é capturado.
+        """
+        achados = {}
+        for linha in txt.splitlines():
+            valores = cls._RE_DINHEIRO.findall(linha)
+            if not valores:
+                continue
+            valor = float(valores[-1].replace(".", "").replace(",", "."))
+            if cls._RE_LIQUIDO.search(linha) and "VALOR_LIQUIDO" not in achados:
+                achados["VALOR_LIQUIDO"] = valor
+                continue
+            for nome, rx in cls._TRIBUTOS_LABELS:
+                if rx.search(linha):
+                    # guarda o primeiro valor visto para o tributo (linha de destaque)
+                    if nome not in achados and valor > 0:
+                        achados[nome] = valor
+                    break
+        return achados
 
     # UFs válidas do IBGE (posições 1-2 da chave) e modelos de documento fiscal
     _UFS_VALIDAS = {11,12,13,14,15,16,17,21,22,23,24,25,26,27,28,29,31,32,33,35,
@@ -264,7 +303,8 @@ REGRAS OBRIGATÓRIAS:
           tem_texto (False = scan/foto), chave (NF-e 44 díg. com DV válido),
           cnpjs (todos os CNPJs presentes) e linha_digitavel (boleto 47/48).
         """
-        info = {"tem_texto": False, "chave": None, "cnpjs": [], "linha_digitavel": None, "digitos": ""}
+        info = {"tem_texto": False, "chave": None, "cnpjs": [], "linha_digitavel": None,
+                "digitos": "", "impostos": {}}
         if not pdf_bytes:
             return info
         txt = self.extrair_texto_pdf(pdf_bytes)
@@ -287,6 +327,8 @@ REGRAS OBRIGATÓRIAS:
             if len(dig) in (47, 48):
                 info["linha_digitavel"] = dig
                 break
+        if info["texto_confiavel"]:
+            info["impostos"] = self._impostos_do_texto(txt)
         return info
 
     @staticmethod

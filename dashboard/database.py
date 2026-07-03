@@ -94,6 +94,8 @@ class Pagamento(Base):
     banco_boleto = Column(String, nullable=True)
     valor_boleto = Column(Float, nullable=True)
     confronto = Column(String, nullable=True)
+    retencoes = Column(String, nullable=True)       # JSON {tributo: valor}
+    liquido_calc = Column(Float, nullable=True)     # parcela bruta - retenções
 
 class LogExecucao(Base):
     __tablename__ = "logs_execucao"
@@ -121,11 +123,16 @@ def _migrar_colunas():
         "revisado_por": "TEXT",
         "revisado_em": "DATETIME",
     }
+    novas_pag = {"retencoes": "TEXT", "liquido_calc": "REAL"}
     with engine.connect() as conn:
         existentes = {r[1] for r in conn.execute(text("PRAGMA table_info(divergencias)"))}
         for col, ddl in novas.items():
             if col not in existentes:
                 conn.execute(text(f"ALTER TABLE divergencias ADD COLUMN {col} {ddl}"))
+        existentes_pag = {r[1] for r in conn.execute(text("PRAGMA table_info(pagamentos)"))}
+        for col, ddl in novas_pag.items():
+            if existentes_pag and col not in existentes_pag:
+                conn.execute(text(f"ALTER TABLE pagamentos ADD COLUMN {col} {ddl}"))
         conn.commit()
 
 _migrar_colunas()
@@ -303,6 +310,8 @@ def registrar_pagamentos(execucao_id: int, rows: list) -> None:
                 banco_boleto=p.get("banco_boleto"),
                 valor_boleto=p.get("valor_boleto"),
                 confronto=p.get("confronto"),
+                retencoes=p.get("retencoes"),
+                liquido_calc=p.get("liquido_calc"),
             ))
         db.commit()
     finally:

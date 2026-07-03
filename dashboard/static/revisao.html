@@ -203,6 +203,9 @@ const NOMES = {
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
     "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor não aparece na NF anexada",
+    "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
+    "IMPOSTO_NAO_RETIDO": "Nota destaca retenção que o título não lançou",
+    "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
 const EXPLICA = {
@@ -421,6 +424,22 @@ function renderDetalhe() {
             ${linhaPg("Linha digitável", p.linha_digitavel, "mono")}
             ${linhaPg("Banco do boleto", p.banco_boleto)}
             ${linhaPg("Valor do boleto (linha)", p.valor_boleto != null ? dinheiro(p.valor_boleto) : "")}
+            ${(() => {
+                if (!p.retencoes) return "";
+                try {
+                    const r = JSON.parse(p.retencoes);
+                    const txt = Object.entries(r).map(([k, v]) => k + " " + dinheiro(v)).join(" · ");
+                    return linhaPg("Retenções (impostos)", txt);
+                } catch (e) { return ""; }
+            })()}
+            ${(() => {
+                if (p.liquido_calc == null) return "";
+                const bate = Math.abs(p.liquido_calc - (t.valor || 0)) <= 0.05;
+                return linhaPg("Líquido calculado (bruto − retenções)",
+                    dinheiro(p.liquido_calc) + (bate
+                        ? " <span class='match-ok'>✓ bate com o fluxo</span>"
+                        : " <span class='match-bad'>✗ difere do fluxo " + dinheiro(t.valor) + "</span>"));
+            })()}
             <div class="pg"><div class="k">Confronto</div><div class="v">
                 <span class="conf-chip ${confCls}">${p.confronto || "–"}</span></div></div>
         </div></div>`;

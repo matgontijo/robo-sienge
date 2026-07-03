@@ -146,6 +146,7 @@ class ReportGenerator:
             "Tipo Chave Pix", "Chave Pix", "Banco", "Agência", "Conta",
             "Titular/Beneficiário", "CNPJ Destino", "Linha Digitável",
             "Banco do Boleto", "Valor Boleto (linha)",
+            "Retenções", "Líquido Calc.",
             "Confronto CNPJ"
         ]
         ws.append(headers)
@@ -162,7 +163,9 @@ class ReportGenerator:
                 p.get("chave_pix"), p.get("banco"), p.get("agencia"),
                 p.get("conta"), p.get("titular"), p.get("cnpj_destino"),
                 p.get("linha_digitavel"), p.get("banco_boleto"),
-                p.get("valor_boleto"), p.get("confronto"),
+                p.get("valor_boleto"),
+                self._retencoes_legivel(p.get("retencoes")),
+                p.get("liquido_calc"), p.get("confronto"),
             ])
             confronto = str(p.get("confronto") or "")
             fill = None
@@ -177,8 +180,21 @@ class ReportGenerator:
                     ws.cell(row=row_num, column=col).fill = fill
             row_num += 1
 
-        ws.auto_filter.ref = f"A1:R{row_num - 1}"
+        ws.auto_filter.ref = f"A1:T{row_num - 1}"
         self._auto_fit_columns(ws)
+
+    @staticmethod
+    def _retencoes_legivel(retencoes_json):
+        """JSON {tributo: valor} -> 'INSS 3.849,34 · CAUCAO 2.858,60'."""
+        if not retencoes_json:
+            return ""
+        import json
+        try:
+            r = json.loads(retencoes_json) if isinstance(retencoes_json, str) else retencoes_json
+            return " · ".join(f"{k} {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                              for k, v in r.items())
+        except (ValueError, TypeError):
+            return str(retencoes_json)
 
     def _preencher_aba_dossie(self, ws, dossie):
         """Checklist do dossiê: cada título com o status da NF e do boleto

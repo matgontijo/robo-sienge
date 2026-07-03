@@ -103,6 +103,9 @@ NOMES_TIPO_PT = {
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompativel",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
     "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor nao aparece na NF anexada",
+    "IMPOSTO_NF_DIVERGENTE": "Retencao do titulo diferente da destacada na nota",
+    "IMPOSTO_NAO_RETIDO": "Nota destaca retencao que o titulo nao lancou",
+    "RETENCAO_ALIQUOTA_SUSPEITA": "Aliquota de retencao acima do usual",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 }
 
@@ -212,12 +215,13 @@ def _limpar_execucoes_orfas():
     import datetime as _dt
     agora = _dt.datetime.now()
     for e in db.get_execucoes(limit=20):
-        if e.status != "RODANDO":
+        exec_id = getattr(e, "id", None)
+        if e.status != "RODANDO" or exec_id is None:
             continue
-        logs = db.get_logs(e.id)
-        ultimo = logs[-1].timestamp if logs else e.iniciado_em
+        logs = db.get_logs(exec_id)
+        ultimo = logs[-1].timestamp if logs else getattr(e, "iniciado_em", None)
         if ultimo and (agora - ultimo).total_seconds() > 900:
-            db.atualizar_execucao(e.id, status="ABORTADO", concluido_em=agora,
+            db.atualizar_execucao(exec_id, status="ABORTADO", concluido_em=agora,
                                   erro_mensagem="Processo interrompido — marcado automaticamente como abortado")
 
 _limpar_execucoes_orfas()  # limpeza na subida do painel

@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -414,6 +415,10 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                     "banco_boleto": banco_boleto,
                     "valor_boleto": valor_boleto,
                     "confronto": confronto,
+                    "retencoes": json.dumps(retencoes, ensure_ascii=False) if retencoes else None,
+                    "liquido_calc": (float(info_pagamento.valor) - sum(float(v or 0) for v in (retencoes or {}).values()))
+                                    if info_pagamento.valor and (not info_pagamento.total_parcelas or info_pagamento.total_parcelas == 1)
+                                    else None,
                 })
 
             if erro:
