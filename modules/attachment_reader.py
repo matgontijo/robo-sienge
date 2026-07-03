@@ -228,6 +228,25 @@ REGRAS OBRIGATÓRIAS:
     _RE_CNPJ = re.compile(r"\d{2}[\s.]?\d{3}[\s.]?\d{3}[\s./]?\d{4}[\s-]?\d{2}")
     _RE_LINHA = re.compile(r"\d[\d.\s]{40,70}\d")
 
+    # UFs válidas do IBGE (posições 1-2 da chave) e modelos de documento fiscal
+    _UFS_VALIDAS = {11,12,13,14,15,16,17,21,22,23,24,25,26,27,28,29,31,32,33,35,
+                    41,42,43,50,51,52,53}
+
+    @classmethod
+    def _chave_plausivel(cls, chave: str) -> bool:
+        """Estrutura da chave além do DV: UF do IBGE, ano/mês plausíveis e
+        modelo fiscal conhecido — evita 'chaves' fatiadas de outros números
+        (linhas digitáveis, códigos) que passam no DV por sorte (1 em 11)."""
+        try:
+            uf = int(chave[0:2])
+            ano = int(chave[2:4])
+            mes = int(chave[4:6])
+            modelo = chave[20:22]
+        except (ValueError, IndexError):
+            return False
+        return (uf in cls._UFS_VALIDAS and 15 <= ano <= 45 and 1 <= mes <= 12
+                and modelo in ("55", "57", "58", "65", "67"))
+
     def extrair_texto_pdf(self, pdf_bytes: bytes, max_paginas: int = 4) -> str:
         """Extrai o texto embutido do PDF (PDFs digitais; scans retornam vazio)."""
         try:
@@ -260,7 +279,7 @@ REGRAS OBRIGATÓRIAS:
         info["cnpjs"] = sorted({re.sub(r"\D", "", m) for m in self._RE_CNPJ.findall(txt)})
         compacto = re.sub(r"[\s.\-/]", "", txt)
         for m in re.finditer(r"\d{44}", compacto):
-            if self._validar_chave_nfe(m.group()):
+            if self._validar_chave_nfe(m.group()) and self._chave_plausivel(m.group()):
                 info["chave"] = m.group()
                 break
         for m in self._RE_LINHA.finditer(txt):

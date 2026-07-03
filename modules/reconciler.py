@@ -125,9 +125,10 @@ class Reconciler:
                     danfe_path=titulo.danfe_path or nfe_data.danfe_path
                 ))
                 
-            # REGRA 2 - VALOR
+            # REGRA 2 - VALOR (só quando a NF tem valor conhecido; NFeData derivado
+            # apenas da chave de acesso não carrega valor)
             diff = abs(titulo.valor_liquido - nfe_data.valor_liquido)
-            if diff > 0.05:
+            if nfe_data.valor_liquido and diff > 0.05:
                 divergencias.append(Divergencia(
                     titulo_id=titulo.id,
                     titulo_numero=titulo.numero,
@@ -214,7 +215,9 @@ class Reconciler:
         # Se o PDF da NF tem texto e o CNPJ do credor não aparece em lugar nenhum
         # dele (busca no fluxo de dígitos, imune a formatação), a nota anexada
         # pode ser de outro fornecedor — conferência manual.
-        if nf_texto and nf_texto.get("tem_texto") and nf_texto.get("texto_confiavel") and titulo.fornecedor_cnpj:
+        # (só para documentos que são NF de fato — ADTF/pedidos não têm nota)
+        if (nf_texto and nf_texto.get("tem_texto") and nf_texto.get("texto_confiavel")
+                and titulo.fornecedor_cnpj and "NF" in (titulo.tipo_documento or "").upper()):
             # raiz do CNPJ (8 dígitos): identifica a empresa e sobrevive a
             # quebras de formatação no PDF
             cnpj_credor = self._limpar_cnpj(titulo.fornecedor_cnpj)[:8]
