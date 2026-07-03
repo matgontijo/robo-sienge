@@ -334,6 +334,9 @@ REGRAS OBRIGATÓRIAS:
                 break
         if info["texto_confiavel"]:
             info["impostos"] = self._impostos_do_texto(txt)
+        # Declaração impressa na própria nota: "OPTANTE PELO SIMPLES NACIONAL"
+        m = re.search(r"(N[ÃA]O\s+)?OPTANTE\s+PELO\s+SIMPLES", txt, re.I)
+        info["declara_simples"] = (m.group(1) is None) if m else None
         return info
 
     @staticmethod

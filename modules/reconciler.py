@@ -60,7 +60,8 @@ class Reconciler:
         retencoes: Optional[dict] = None,
         dda_disponivel: bool = True,
         ocr_disponivel: bool = True,
-        nf_texto: Optional[dict] = None
+        nf_texto: Optional[dict] = None,
+        consultar_simples=None
     ) -> List[Divergencia]:
         divergencias = []
         
@@ -237,12 +238,14 @@ class Reconciler:
             divergencias.extend(
                 self._reconciliar_impostos(titulo, nfe_data, impostos_destacados or {}, retencoes or {}))
 
-        # IMPOSTOS x TEXTO DA NF + SANIDADE DE ALÍQUOTAS
+        # IMPOSTOS x TEXTO DA NF + SANIDADE DE ALÍQUOTAS + REGIME (Simples)
         divergencias.extend(
-            self._reconciliar_impostos_nf(titulo, retencoes or {}, nf_texto))
+            self._reconciliar_impostos_nf(titulo, retencoes or {}, nf_texto, consultar_simples))
         if info_pagamento is not None:
             divergencias.extend(
                 self._reconciliar_aliquotas(titulo, info_pagamento, retencoes or {}))
+        divergencias.extend(
+            self._reconciliar_regime_simples(titulo, retencoes or {}, nf_texto, consultar_simples))
 
         return divergencias
 
@@ -259,7 +262,43 @@ class Reconciler:
         if n.startswith("IR") or " IR" in n or "IRRF" in n: return "IR"
         return None
 
-    def _reconciliar_impostos_nf(self, titulo: Titulo, retencoes: dict, nf_texto) -> List[Divergencia]:
+    _FEDERAIS = ("IR", "PIS", "COFINS", "CSLL")
+
+    def _fornecedor_simples(self, titulo: Titulo, nf_texto, consultar_simples) -> Optional[bool]:
+        """Regime do fornecedor: declaração na própria NF > consulta por CNPJ
+        (lazy, com cache). None = desconhecido."""
+        if nf_texto and nf_texto.get("declara_simples") is not None:
+            return nf_texto["declara_simples"]
+        if consultar_simples and titulo.fornecedor_cnpj:
+            return consultar_simples(titulo.fornecedor_cnpj)
+        return None
+
+    def _reconciliar_regime_simples(self, titulo: Titulo, retencoes: dict, nf_texto,
+                                    consultar_simples) -> List[Divergencia]:
+        """Fornecedor optante do Simples NÃO sofre retenção federal (IR/PIS/
+        COFINS/CSLL — IN RFB 1234/459). Título retendo federais de optante =
+        retenção indevida (fornecedor recebe a menos e vai reclamar)."""
+        divs: List[Divergencia] = []
+        federais_retidas = {n: float(v or 0) for n, v in (retencoes or {}).items()
+                            if self._tributo_canonico(n) in self._FEDERAIS and float(v or 0) > 0}
+        if not federais_retidas:
+            return divs
+        simples = self._fornecedor_simples(titulo, nf_texto, consultar_simples)
+        if simples is True:
+            detalhe = " + ".join(f"{n} {v:.2f}" for n, v in federais_retidas.items())
+            divs.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="RETENCAO_INDEVIDA_SIMPLES",
+                campo="Retenções federais",
+                valor_sienge=detalhe,
+                valor_nfe="Fornecedor optante do Simples Nacional",
+                valor_boleto="Optante do Simples não sofre retenção de IR/PIS/COFINS/CSLL",
+                criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+            ))
+        return divs
+
+    def _reconciliar_impostos_nf(self, titulo: Titulo, retencoes: dict, nf_texto,
+                                 consultar_simples=None) -> List[Divergencia]:
         """
         Impostos escritos na própria NF (camada de texto) x retenções do título:
           - mesmo tributo com valores diferentes -> IMPOSTO_NF_DIVERGENTE
@@ -288,6 +327,10 @@ class Reconciler:
                 # ISS só conta quando a nota diz explicitamente "retido/retenção"
                 # (NFS-e sempre exibe o ISS devido, mesmo sem retenção pelo tomador)
                 if tributo == "ISS" and "ISS" not in com_retencao:
+                    continue
+                # fornecedor do Simples não sofre retenção federal — não é erro
+                if tributo in self._FEDERAIS and self._fornecedor_simples(
+                        titulo, nf_texto, consultar_simples) is True:
                     continue
                 if v_nota > 1.0 and tributo in ("INSS", "ISS", "IR", "PIS", "COFINS", "CSLL"):
                     divs.append(Divergencia(

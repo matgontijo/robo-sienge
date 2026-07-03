@@ -96,6 +96,7 @@ class Pagamento(Base):
     confronto = Column(String, nullable=True)
     retencoes = Column(String, nullable=True)       # JSON {tributo: valor}
     liquido_calc = Column(Float, nullable=True)     # parcela bruta - retenções
+    regime = Column(String, nullable=True)          # Simples Nacional | Regime normal
 
 class LogExecucao(Base):
     __tablename__ = "logs_execucao"
@@ -123,7 +124,7 @@ def _migrar_colunas():
         "revisado_por": "TEXT",
         "revisado_em": "DATETIME",
     }
-    novas_pag = {"retencoes": "TEXT", "liquido_calc": "REAL"}
+    novas_pag = {"retencoes": "TEXT", "liquido_calc": "REAL", "regime": "TEXT"}
     with engine.connect() as conn:
         existentes = {r[1] for r in conn.execute(text("PRAGMA table_info(divergencias)"))}
         for col, ddl in novas.items():
@@ -312,6 +313,7 @@ def registrar_pagamentos(execucao_id: int, rows: list) -> None:
                 confronto=p.get("confronto"),
                 retencoes=p.get("retencoes"),
                 liquido_calc=p.get("liquido_calc"),
+                regime=p.get("regime"),
             ))
         db.commit()
     finally:

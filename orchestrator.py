@@ -11,6 +11,7 @@ from models import Titulo, NFeData, Boleto
 from modules.sienge_client import SiengeClient
 from modules.report_parser import ReportParser
 from modules.attachment_reader import AttachmentReader
+from modules.receita_client import ReceitaClient
 from modules.sefaz_client import SefazClient
 from modules.danfe_generator import DanfeGenerator
 from modules.santander_client import SantanderClient
@@ -294,6 +295,8 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
             config.SANTANDER_CERT_PASSWORD, config.SANTANDER_ENV))
         reconciler = Reconciler()
         report_gen = ReportGenerator()
+        receita = _init_cliente("receita", lambda: ReceitaClient(
+            cache_path=_os.path.join(config.OUTPUT_DIR, "cnpj_regime.json")))
         
         notifier = None
         if config.SMTP_HOST:
@@ -425,14 +428,26 @@ def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por
                 titulos_erro.append((t, erro))
                 continue
 
+            # NF que declara "optante pelo Simples" alimenta o cache de regime
+            nf_texto_r = r.get("nf_texto")
+            if receita is not None and nf_texto_r and nf_texto_r.get("declara_simples") is not None:
+                receita.registrar_hint(t.fornecedor_cnpj, nf_texto_r["declara_simples"])
+
             divs = reconciler.reconciliar(
                 t, nfe, boletos_dda, boleto_anexo,
                 info_pagamento=info_pagamento,
                 impostos_destacados=destacados, retencoes=retencoes,
                 dda_disponivel=dda_disponivel,
                 ocr_disponivel=reader is not None and reader.provider is not None,
-                nf_texto=r.get("nf_texto"),
+                nf_texto=nf_texto_r,
+                consultar_simples=receita.consultar_simples if receita is not None else None,
             )
+
+            # regime conhecido (cache) vai para o cartão da Conferência
+            if receita is not None and pagamentos_rows and pagamentos_rows[-1].get("numero") == t.numero:
+                simples = receita.regime_conhecido(t.fornecedor_cnpj)
+                if simples is not None:
+                    pagamentos_rows[-1]["regime"] = "Simples Nacional" if simples else "Regime normal"
             if not divs:
                 titulos_ok.append(t)
             else:

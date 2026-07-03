@@ -106,6 +106,7 @@ NOMES_TIPO_PT = {
     "IMPOSTO_NF_DIVERGENTE": "Retencao do titulo diferente da destacada na nota",
     "IMPOSTO_NAO_RETIDO": "Nota destaca retencao que o titulo nao lancou",
     "RETENCAO_ALIQUOTA_SUSPEITA": "Aliquota de retencao acima do usual",
+    "RETENCAO_INDEVIDA_SIMPLES": "Retencao federal de fornecedor do Simples",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 }
 

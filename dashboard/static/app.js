@@ -22,6 +22,7 @@ const NOMES_TIPO = {
     "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
     "IMPOSTO_NAO_RETIDO": "Nota destaca retenção que o título não lançou",
     "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
+    "RETENCAO_INDEVIDA_SIMPLES": "Retenção federal de fornecedor do Simples",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
 let chartInstance = null;

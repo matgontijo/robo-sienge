@@ -206,6 +206,7 @@ const NOMES = {
     "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
     "IMPOSTO_NAO_RETIDO": "Nota destaca retenção que o título não lançou",
     "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
+    "RETENCAO_INDEVIDA_SIMPLES": "Retenção federal de fornecedor do Simples",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
 const EXPLICA = {
@@ -412,7 +413,9 @@ function renderDetalhe() {
             ? "<span class='match-ok'>✓ igual ao credor</span>"
             : "<span class='match-bad'>✗ DIFERENTE do credor</span>") : "";
         const confCls = p.confronto === "OK" ? "conf-OK" : p.confronto === "DIVERGENTE" ? "conf-DIVERGENTE" : "conf-outro";
-        html += `<div class="sec-t">💳 Pagamento cadastrado na parcela</div>
+        const regimeBadge = p.regime
+            ? ` <span class="badge ${p.regime.includes("Simples") ? "b-warn" : "b-cinza"}">${p.regime}</span>` : "";
+        html += `<div class="sec-t">💳 Pagamento cadastrado na parcela${regimeBadge}</div>
         <div class="pagcard"><div class="paggrid">
             ${linhaPg("Forma", p.forma)}
             ${linhaPg("Valor da parcela (bruto)", p.valor != null ? dinheiro(p.valor) : "")}
