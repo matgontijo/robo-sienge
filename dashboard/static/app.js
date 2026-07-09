@@ -544,7 +544,7 @@ function switchMainTab(viewName) {
     if (viewName === 'conferencia') {
         // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
         const frame = document.getElementById('frame-conferencia');
-        if (frame && !frame.src) frame.src = '/static/revisao.html?v=6';
+        if (frame && !frame.src) frame.src = '/static/revisao.html?v=7';
         atualizarBadgeConferencia();
     }
 }

@@ -13,8 +13,15 @@
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { height:100%; }
-body { font-family:"Segoe UI",system-ui,Arial,sans-serif; background:var(--bg); color:var(--ink);
-       display:flex; flex-direction:column; overflow:hidden; }
+body { font-family:"Segoe UI",system-ui,Arial,sans-serif;
+       background:
+         radial-gradient(900px 380px at 85% -8%, rgba(15,118,110,.10), transparent 60%),
+         radial-gradient(700px 320px at -10% 110%, rgba(37,99,235,.07), transparent 60%),
+         var(--bg);
+       color:var(--ink);
+       display:flex; flex-direction:column; overflow:hidden;
+       font-variant-numeric: tabular-nums; }
+::selection { background:#0f766e22; }
 
 /* ===================== TOOLBAR (única, fina, clara) ===================== */
 header.toolbar {
@@ -56,8 +63,9 @@ label.toggle { display:flex; gap:6px; align-items:center; font-size:12px; color:
 
 #lista { flex:1; overflow-y:auto; }
 .item { padding:11px 14px 11px 11px; border-bottom:1px solid var(--line); cursor:pointer;
-        display:flex; gap:10px; align-items:stretch; }
-.item:hover { background:#f8fafc; }
+        display:flex; gap:10px; align-items:stretch;
+        transition:background .12s, transform .12s; }
+.item:hover { background:#f8fafc; transform:translateX(2px); }
 .item.sel { background:var(--sel); box-shadow:inset 3px 0 0 var(--accent); }
 .strip { width:5px; border-radius:4px; flex-shrink:0; }
 .strip.crit { background:var(--crit); } .strip.warn { background:var(--warn); }
@@ -109,22 +117,38 @@ label.toggle { display:flex; gap:6px; align-items:center; font-size:12px; color:
 
 /* apontamentos */
 .apto { background:var(--card); border:1px solid var(--line); border-left-width:5px; border-radius:14px;
-        padding:14px 18px; margin-bottom:10px; }
+        padding:14px 18px; margin-bottom:10px;
+        box-shadow:0 1px 2px rgba(16,32,47,.04);
+        transition:opacity .25s, transform .25s, box-shadow .15s; }
+.apto:hover { box-shadow:0 4px 14px rgba(16,32,47,.08); }
 .apto.CRITICA { border-left-color:var(--crit); }
 .apto.ATENCAO { border-left-color:var(--warn); }
-.apto.APROVADO { opacity:.75; border-left-color:var(--ok); background:#fbfefc; }
-.apto.REJEITADO { opacity:.75; border-left-color:#94a3b8; background:#fafbfc; }
+.apto.APROVADO { opacity:.72; border-left-color:var(--ok); background:#fbfefc; }
+.apto.REJEITADO { opacity:.72; border-left-color:#94a3b8; background:#fafbfc; }
 .apto .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-.apto .nome { font-size:14.5px; font-weight:800; }
+.apto .nome { font-size:15px; font-weight:800; letter-spacing:-.1px; }
 .badge { font-size:10.5px; font-weight:800; padding:2px 9px; border-radius:999px; }
 .b-crit { background:var(--crit-bg); color:var(--crit); }
 .b-warn { background:var(--warn-bg); color:var(--warn); }
 .b-ok { background:var(--ok-bg); color:var(--ok); }
 .b-cinza { background:#f1f5f9; color:var(--muted); }
-.apto .comp { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
-.compbox { background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:8px 14px; font-size:13px; min-width:150px; }
+
+/* comparação em formato de "diff": Sienge diz -> Verificado */
+.comp { display:flex; gap:0; flex-wrap:wrap; margin-top:12px; align-items:stretch; }
+.compbox { background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:8px 14px;
+           font-size:13px; min-width:150px; margin-right:10px; margin-bottom:6px; }
 .compbox .k { font-size:10.5px; text-transform:uppercase; color:var(--muted); font-weight:800; letter-spacing:.4px; }
 .compbox .v { font-weight:700; margin-top:2px; }
+.diff { display:flex; align-items:stretch; margin-right:10px; margin-bottom:6px; }
+.diff .lado { border:1px solid var(--line); padding:8px 14px; font-size:13px; min-width:140px; background:#f8fafc; }
+.diff .lado.esq { border-radius:10px 0 0 10px; border-right:none; }
+.diff .lado.dir { border-radius:0 10px 10px 0; background:var(--crit-bg); border-color:#f3c4c0; }
+.diff .lado .k { font-size:10.5px; text-transform:uppercase; color:var(--muted); font-weight:800; letter-spacing:.4px; }
+.diff .lado.dir .k { color:var(--crit); }
+.diff .lado .v { font-weight:800; margin-top:2px; }
+.diff .seta { display:flex; align-items:center; padding:0 2px; background:#f8fafc;
+              border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+              color:var(--crit); font-weight:900; }
 .apto .acts { display:flex; gap:8px; margin-top:12px; align-items:center; flex-wrap:wrap; }
 .bt-sm { border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:800; cursor:pointer; }
 .bt-ap { background:var(--ok-bg); color:var(--ok); } .bt-ap:hover { background:#c2f0d2; }
@@ -391,12 +415,14 @@ function renderDetalhe() {
     let html = "";
     if (fimTudo) html += `<div class="fim" style="display:block">🎉 Todos os ${DIVS.length} apontamentos do ciclo foram revisados. Remessa liberada para montagem.</div>`;
 
+    const revisadosT = t.divs.length - t.pendentes;
     html += `<div class="det-head">
         <div><div class="tit">Título ${t.numero}${t.pag?.parcela ? " · parc. " + t.pag.parcela : ""}</div>
              <div class="kv">${t.fornecedor || ""}${t.cnpj ? " · CNPJ " + t.cnpj : ""}</div></div>
         <div class="kv">Valor<br><b>${dinheiro(t.valor)}</b></div>
         <div class="kv">Vencimento<br><b>${t.venc || "–"}</b></div>
         ${p?.forma ? `<div class="kv">Forma<br><b>${p.forma}</b></div>` : ""}
+        ${t.divs.length ? `<div class="kv">Revisão<br><b>${revisadosT}/${t.divs.length}</b></div>` : ""}
         <div class="spacer"></div>
         <button class="bt bt-aprovar-tudo" id="bt-tudo" ${t.pendentes ? "" : "disabled"}>
             ✓ Aprovar ${t.pendentes || ""} pendente${t.pendentes === 1 ? "" : "s"} <small>(A)</small></button>
@@ -466,12 +492,23 @@ function cartaoApto(d, t) {
 
     let comps = "";
     if (d.campo) comps += `<div class="compbox"><div class="k">Campo</div><div class="v">${d.campo}</div></div>`;
-    if (d.valor_sienge_campo && d.valor_sienge_campo !== "-")
-        comps += `<div class="compbox"><div class="k">Sienge diz</div><div class="v">${d.valor_sienge_campo}</div></div>`;
-    if (d.valor_nfe_campo && d.valor_nfe_campo !== "-")
-        comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${d.valor_nfe_campo}</div></div>`;
-    if (d.valor_boleto_campo && d.valor_boleto_campo !== "-")
-        comps += `<div class="compbox"><div class="k">Verificado</div><div class="v">${d.valor_boleto_campo}</div></div>`;
+    const sienge = d.valor_sienge_campo && d.valor_sienge_campo !== "-" ? d.valor_sienge_campo : null;
+    const nf = d.valor_nfe_campo && d.valor_nfe_campo !== "-" ? d.valor_nfe_campo : null;
+    const verif = d.valor_boleto_campo && d.valor_boleto_campo !== "-" ? d.valor_boleto_campo : nf;
+    if (sienge && verif) {
+        // diff visual: o que o Sienge diz -> o que foi verificado (divergente em vermelho)
+        comps += `<div class="diff">
+            <div class="lado esq"><div class="k">Sienge diz</div><div class="v">${sienge}</div></div>
+            <div class="seta">➜</div>
+            <div class="lado dir"><div class="k">Verificado</div><div class="v">${verif}</div></div>
+        </div>`;
+        if (nf && verif !== nf)
+            comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${nf}</div></div>`;
+    } else {
+        if (sienge) comps += `<div class="compbox"><div class="k">Sienge diz</div><div class="v">${sienge}</div></div>`;
+        if (nf) comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${nf}</div></div>`;
+        if (!nf && verif) comps += `<div class="compbox"><div class="k">Verificado</div><div class="v">${verif}</div></div>`;
+    }
 
     box.innerHTML = `<div class="top"><span class="nome">${NOMES[d.tipo] || d.tipo}</span>${badgeC}${badgeS}</div>
         ${explica}<div class="comp">${comps}</div>

@@ -139,8 +139,8 @@ button { font-family: inherit; }
 .content > div[id^="view-"] { max-width: 1240px; margin: 0 auto; }
 
 /* Abas de tela cheia (Conferência/Apresentação): sem padding, sem rolagem dupla */
-.content.full-bleed { padding: 0; overflow: hidden; }
-.content.full-bleed > div[id^="view-"] { max-width: none; margin: 0; height: 100%; }
+.content.full-bleed { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.content.full-bleed > div[id^="view-"] { max-width: none; margin: 0; flex: 1; min-height: 0; }
 
 /* botões */
 .btn-primary, .btn-secondary {
