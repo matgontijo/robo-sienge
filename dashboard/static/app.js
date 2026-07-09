@@ -34,7 +34,7 @@ let userRole = null;
 window.onload = () => {
     if (token) {
         document.getElementById('login-container').style.display = 'none';
-        document.getElementById('app-container').style.display = 'block';
+        document.getElementById('app-container').style.display = 'flex';
         initDashboard();
     }
 };
@@ -59,7 +59,7 @@ function login() {
         if (r.ok) {
             sessionStorage.setItem("auth_token", token);
             document.getElementById('login-container').style.display = 'none';
-            document.getElementById('app-container').style.display = 'block';
+            document.getElementById('app-container').style.display = 'flex';
             initDashboard();
         } else {
             err.style.display = "block";
