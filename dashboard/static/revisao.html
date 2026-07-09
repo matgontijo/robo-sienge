@@ -6,142 +6,147 @@
 <title>Conferência | Robô Sienge</title>
 <style>
 :root {
-    --ink:#101b26; --muted:#6b7a89; --line:#e4e9ee; --bg:#f2f5f8; --card:#fff;
-    --ok:#15803d; --ok-bg:#e9f7ee; --warn:#b45309; --warn-bg:#fdf3dc;
-    --crit:#c0392b; --crit-bg:#fbeae8; --accent:#0f766e;
+    --ink:#0f1c28; --muted:#66768a; --line:#e4e9ef; --bg:#f4f6f9; --card:#fff;
+    --ok:#15803d; --ok-bg:#e9f7ee;
+    --warn:#a16207; --warn-bg:#fdf4dd;
+    --crit:#c2352b; --crit-bg:#fceceb;
+    --accent:#0f766e; --accent-bg:#e6f2f1;
+    --grupo:#f0f4f8;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { height:100%; }
 body {
     font-family:"Segoe UI",system-ui,Arial,sans-serif;
     background:var(--bg); color:var(--ink);
+    font-size:14px; line-height:1.5;
     display:flex; flex-direction:column; overflow:hidden;
     font-variant-numeric:tabular-nums;
 }
 
-/* ============ FAIXA DE PROGRESSO (única coisa acima do cartão) ============ */
+/* ============ barra de ferramentas ============ */
 .topo {
-    display:flex; align-items:center; gap:14px;
-    padding:10px 20px; background:var(--card); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:12px;
+    padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line);
     flex-shrink:0; flex-wrap:wrap;
 }
 .topo select { padding:7px 11px; border-radius:8px; border:1px solid var(--line);
     font-size:13px; font-weight:700; background:#fff; color:var(--ink); }
-.prog { flex:1; min-width:160px; display:flex; align-items:center; gap:10px; }
-.prog .barra { flex:1; max-width:420px; height:8px; background:#e7ecf1; border-radius:99px; overflow:hidden; }
-.prog .barra div { height:100%; width:0%; background:linear-gradient(90deg,var(--accent),#14b8a6); transition:width .35s; }
-.prog .txt { font-size:13px; color:var(--muted); white-space:nowrap; }
+.prog { display:flex; align-items:center; gap:10px; min-width:200px; }
+.prog .barra { width:150px; height:8px; background:#e7ecf1; border-radius:99px; overflow:hidden; }
+.prog .barra div { height:100%; width:0%; background:linear-gradient(90deg,var(--accent),#14b8a6); transition:width .3s; }
+.prog .txt { font-size:12.5px; color:var(--muted); white-space:nowrap; }
 .prog .txt b { color:var(--ink); }
-.topo button { border:1px solid var(--line); background:#fff; border-radius:9px;
-    padding:8px 14px; font-size:12.5px; font-weight:700; cursor:pointer; color:var(--ink); }
-.topo button:hover { background:#f4f7fa; }
-#bt-lista b { color:var(--crit); }
 
-/* ============ PALCO — um título por vez ============ */
-#palco { flex:1; overflow-y:auto; display:flex; justify-content:center; padding:26px 16px 120px; }
-.cartao { width:100%; max-width:880px; animation:entra .22s ease; }
-@keyframes entra { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:none;} }
+.filtros { display:flex; gap:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.filtros button { border:none; background:#fff; padding:8px 16px; font-size:12.5px;
+    font-weight:700; color:var(--muted); cursor:pointer; border-right:1px solid var(--line); }
+.filtros button:last-child { border-right:none; }
+.filtros button:hover { background:#f5f8fa; }
+.filtros button.on { background:var(--ink); color:#fff; }
+.filtros button b { font-weight:800; }
+.filtros button.on b { color:#fff; }
+.filtros .fc b { color:var(--crit); }
+.filtros .fw b { color:var(--warn); }
 
-/* cabeçalho do título */
-.cab { background:var(--card); border:1px solid var(--line); border-radius:16px;
-    padding:22px 28px; box-shadow:0 2px 10px rgba(16,27,38,.05); }
-.cab .forn { font-size:22px; font-weight:800; letter-spacing:-.3px; line-height:1.2; }
-.cab .meta { color:var(--muted); font-size:13px; margin-top:3px; }
-.cab .nums { display:flex; gap:34px; margin-top:14px; flex-wrap:wrap; align-items:flex-end; }
-.cab .valor { font-size:32px; font-weight:800; letter-spacing:-.5px; }
-.cab .n { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; font-weight:700; }
-.cab .v { font-size:16px; font-weight:700; margin-top:2px; }
+#busca { flex:1; min-width:170px; max-width:340px; padding:8px 14px;
+    border:1px solid var(--line); border-radius:99px; font-size:13px; }
+.topo .acao { border:1px solid var(--line); background:#fff; border-radius:9px;
+    padding:8px 14px; font-size:12.5px; font-weight:700; cursor:pointer; color:var(--ink); white-space:nowrap; }
+.topo .acao:hover { background:#f4f7fa; }
 
-/* problemas do título */
-.problemas { margin-top:14px; }
-.prob {
-    background:var(--card); border:1px solid var(--line); border-radius:14px;
-    padding:16px 20px; margin-bottom:10px; display:flex; gap:14px; align-items:flex-start;
-    border-left:5px solid var(--line);
+/* ============ área da tabela ============ */
+#scroll { flex:1; overflow:auto; padding:0 18px 40px; }
+table { width:100%; border-collapse:separate; border-spacing:0; min-width:1080px; }
+
+thead th {
+    position:sticky; top:0; z-index:4;
+    background:var(--bg);
+    text-align:left; font-size:11px; letter-spacing:.8px; text-transform:uppercase;
+    color:var(--muted); font-weight:800; padding:14px 14px 8px;
+    border-bottom:2px solid #d6dee6;
 }
-.prob.CRITICA { border-left-color:var(--crit); }
-.prob.ATENCAO { border-left-color:var(--warn); }
-.prob.decidido { opacity:.55; }
-.prob .corpo { flex:1; min-width:0; }
-.prob .frase { font-size:15.5px; font-weight:800; }
-.prob .frase .tag { font-size:10.5px; font-weight:800; border-radius:99px; padding:2px 8px; vertical-align:2px; margin-left:8px; }
-.tag.crit { background:var(--crit-bg); color:var(--crit); }
-.tag.warn { background:var(--warn-bg); color:var(--warn); }
-.tag.cinza { background:#eef2f6; color:var(--muted); }
-.tag.ok { background:var(--ok-bg); color:var(--ok); }
-.prob .dica { font-size:12.5px; color:var(--muted); margin-top:3px; }
-.prob .dif { margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px; }
-.prob .dif .de { font-weight:700; color:var(--muted); }
-.prob .dif .seta { color:var(--crit); font-weight:900; font-size:17px; }
-.prob .dif .para { font-weight:800; color:var(--crit); background:var(--crit-bg);
-    padding:3px 12px; border-radius:8px; }
-.prob .dif .rotulo { font-size:11px; color:var(--muted); text-transform:uppercase; font-weight:700; }
-.prob .mini-acao { display:flex; gap:6px; flex-shrink:0; }
-.prob .mini-acao button { width:34px; height:34px; border-radius:9px; border:1px solid var(--line);
-    background:#fff; cursor:pointer; font-size:15px; font-weight:800; }
-.prob .mini-acao .sim { color:var(--ok); } .prob .mini-acao .sim:hover { background:var(--ok-bg); border-color:#bde3c8; }
-.prob .mini-acao .nao { color:var(--crit); } .prob .mini-acao .nao:hover { background:var(--crit-bg); border-color:#f0c4bf; }
-.prob .quem { font-size:11.5px; color:var(--muted); margin-top:6px; }
+thead th.c { text-align:center; }
 
-/* contexto de pagamento — só o que importa */
-.ctx { background:#fbfcfe; border:1px dashed #d7dfe7; border-radius:14px;
-    padding:14px 20px; margin-top:4px; font-size:14px; }
-.ctx .linha { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; margin:3px 0; }
-.ctx .linha .k { color:var(--muted); font-size:12px; text-transform:uppercase; font-weight:700; min-width:130px; }
-.ctx .linha .v { font-weight:700; word-break:break-all; }
-.ctx .linha .v.mono { font-family:Consolas,monospace; font-size:13px; }
-.ctx .ok { color:var(--ok); font-weight:800; }
-.ctx .bad { color:var(--crit); font-weight:800; }
-.ctx details { margin-top:8px; }
-.ctx summary { cursor:pointer; font-size:12.5px; color:var(--accent); font-weight:700; }
-.ctx .tudo { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:8px 20px; margin-top:10px; }
-
-/* observação + barra de decisão */
-#obs { width:100%; margin-top:14px; padding:12px 16px; border:1px solid var(--line);
-    border-radius:12px; font-size:13.5px; background:var(--card); }
-.decisao {
-    position:fixed; left:0; right:0; bottom:0;
-    display:flex; justify-content:center; gap:14px; padding:14px 16px 18px;
-    background:linear-gradient(180deg, rgba(242,245,248,0), rgba(242,245,248,.96) 38%);
-    pointer-events:none;
+/* linha de grupo = o título */
+tr.grupo td {
+    background:var(--grupo);
+    padding:12px 14px; border-top:14px solid var(--bg);
+    border-bottom:1px solid var(--line);
 }
-.decisao button { pointer-events:auto; border:none; border-radius:14px; cursor:pointer;
-    font-weight:800; padding:16px 30px; font-size:15.5px;
-    box-shadow:0 6px 18px rgba(16,27,38,.14); transition:transform .1s; }
-.decisao button:hover { transform:translateY(-2px); }
-.decisao kbd { background:rgba(0,0,0,.14); border-radius:5px; padding:1px 7px; font-family:inherit; font-size:12px; margin-left:8px; }
-.bt-rejeitar { background:#fff; color:var(--crit); border:2px solid #f0c4bf !important; }
-.bt-pular { background:#fff; color:var(--muted); border:1px solid var(--line) !important; font-size:13.5px !important; padding:16px 20px !important; }
-.bt-aprovar { background:var(--ok); color:#fff; }
-.bt-aprovar:hover { background:#166534; }
+tr.grupo td:first-child { border-radius:12px 0 0 0; }
+tr.grupo td:last-child { border-radius:0 12px 0 0; }
+.g-forn { font-size:15.5px; font-weight:800; letter-spacing:-.1px; }
+.g-meta { font-size:12px; color:var(--muted); margin-top:1px; }
+.g-fatos { display:flex; gap:26px; align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+.g-fato { text-align:right; }
+.g-fato .k { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; font-weight:800; }
+.g-fato .v { font-size:15px; font-weight:800; white-space:nowrap; }
+.g-aprovar { border:none; background:var(--ok); color:#fff; border-radius:9px;
+    padding:9px 18px; font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.g-aprovar:hover { background:#166534; }
+.g-aprovar:disabled { background:#c6d3cb; cursor:default; }
+.g-ok { font-size:12.5px; font-weight:800; color:var(--ok); white-space:nowrap; }
+.g-pagto { font-size:12px; color:var(--muted); cursor:pointer; user-select:none; white-space:nowrap; }
+.g-pagto:hover { color:var(--accent); }
 
-/* fim de fila */
-.fim { text-align:center; margin-top:9vh; }
-.fim .emoji { font-size:58px; }
-.fim h2 { font-size:26px; margin:14px 0 6px; }
-.fim p { color:var(--muted); font-size:14.5px; }
-.fim .acoes { margin-top:22px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+/* linha de detalhe do pagamento (expansível) */
+tr.pagto-row td { background:#fbfdff; border-bottom:1px solid var(--line); padding:10px 18px; }
+.pagto-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:6px 24px; font-size:12.5px; }
+.pagto-grid .k { color:var(--muted); font-size:10.5px; text-transform:uppercase; font-weight:800; }
+.pagto-grid .v { font-weight:700; word-break:break-all; }
+.pagto-grid .v.mono { font-family:Consolas,monospace; font-size:12px; }
+.pagto-grid .ok { color:var(--ok); font-weight:800; }
+.pagto-grid .bad { color:var(--crit); font-weight:800; }
+
+/* linhas de apontamento */
+tr.apto td {
+    background:var(--card); padding:12px 14px;
+    border-bottom:1px solid #eef2f6; vertical-align:middle;
+}
+tr.apto:hover td { background:#fafcfe; }
+tr.apto.decidido td { background:#fafbfc; }
+tr.apto.decidido .p-label, tr.apto.decidido .vcell { opacity:.5; }
+
+.p-cell { display:flex; gap:10px; align-items:flex-start; }
+.dot { width:10px; height:10px; border-radius:99px; margin-top:6px; flex-shrink:0; }
+.dot.CRITICA { background:var(--crit); box-shadow:0 0 0 3px var(--crit-bg); }
+.dot.ATENCAO { background:#d97706; box-shadow:0 0 0 3px var(--warn-bg); }
+.p-label { font-size:13.5px; font-weight:700; line-height:1.35; }
+.p-sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+.nx { font-size:10px; font-weight:800; background:#eef2f6; color:var(--muted);
+    border-radius:99px; padding:1px 7px; margin-left:6px; vertical-align:1px; }
+
+.vcell { font-size:13.5px; font-weight:700; white-space:nowrap; }
+.vcell.doc-div { color:var(--crit); }
+.vcell .cnpj { font-family:Consolas,monospace; font-size:12px; }
+.vazio { color:#c3ccd6; }
+
+.delta { font-size:12.5px; font-weight:800; color:var(--crit);
+    background:var(--crit-bg); border-radius:8px; padding:4px 10px;
+    display:inline-block; white-space:nowrap; }
+
+/* decisão por linha */
+.d-cell { display:flex; gap:6px; align-items:center; justify-content:flex-end; }
+.d-cell button { border:1px solid var(--line); background:#fff; border-radius:8px;
+    width:34px; height:32px; cursor:pointer; font-size:14px; font-weight:800; }
+.d-cell .sim { color:var(--ok); } .d-cell .sim:hover { background:var(--ok-bg); border-color:#b7e0c4; }
+.d-cell .nao { color:var(--crit); } .d-cell .nao:hover { background:var(--crit-bg); border-color:#f0c4bf; }
+.d-cell .re { color:var(--muted); font-size:12px; width:auto; padding:0 10px; }
+.st { font-size:11px; font-weight:800; border-radius:99px; padding:3px 10px; white-space:nowrap; }
+.st.APROVADO { background:var(--ok-bg); color:var(--ok); }
+.st.REJEITADO { background:#eef1f5; color:var(--muted); }
+
+/* estados vazios / fim */
+.fim { text-align:center; padding:80px 20px; }
+.fim .emoji { font-size:54px; }
+.fim h2 { font-size:24px; margin:12px 0 6px; }
+.fim p { color:var(--muted); }
+.fim .acoes { margin-top:20px; display:flex; gap:12px; justify-content:center; }
 .fim button { border:1px solid var(--line); background:#fff; border-radius:12px;
-    padding:13px 22px; font-size:14px; font-weight:800; cursor:pointer; }
+    padding:12px 22px; font-size:14px; font-weight:800; cursor:pointer; }
 .fim .primario { background:var(--accent); color:#fff; border:none; }
 
-/* ============ LISTA (overlay para pular/rever) ============ */
-#veu { position:fixed; inset:0; background:rgba(10,20,30,.45); display:none;
-    align-items:flex-start; justify-content:center; padding:40px 16px; z-index:50; overflow-y:auto; }
-#veu.aberto { display:flex; }
-.painel-lista { background:#fff; border-radius:16px; width:100%; max-width:760px;
-    padding:18px 20px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
-.painel-lista h3 { font-size:15px; margin-bottom:10px; }
-.painel-lista input { width:100%; padding:9px 14px; border:1px solid var(--line);
-    border-radius:10px; font-size:13.5px; margin-bottom:10px; }
-.pl-item { display:flex; align-items:center; gap:12px; padding:9px 10px; border-radius:10px;
-    cursor:pointer; border-bottom:1px solid #f1f4f7; }
-.pl-item:hover { background:#f5f8fa; }
-.pl-item .num { font-weight:800; min-width:56px; }
-.pl-item .forn { flex:1; font-size:13px; color:#33424f; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pl-item .val { font-size:13px; font-weight:700; }
-
-.toast { position:fixed; bottom:96px; left:50%; transform:translateX(-50%); background:var(--ink);
+.toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--ink);
     color:#fff; padding:11px 22px; border-radius:10px; font-size:13.5px; opacity:0;
     transition:opacity .25s; pointer-events:none; z-index:60; }
 .toast.show { opacity:1; }
@@ -155,85 +160,113 @@ body {
         <div class="barra"><div id="prog-fill"></div></div>
         <span class="txt" id="prog-txt">carregando…</span>
     </div>
-    <button id="bt-lista">📋 Títulos <b id="bt-lista-n"></b></button>
-    <button id="bt-rej">⬇ Rejeitados</button>
+    <div class="filtros" id="filtros"></div>
+    <input id="busca" placeholder="🔍 Fornecedor, nº do título, problema...">
+    <button class="acao" id="bt-rej">⬇ Rejeitados</button>
 </div>
 
-<div id="palco"></div>
-
-<div class="decisao" id="decisao" style="display:none">
-    <button class="bt-rejeitar" id="bt-r">✖ Rejeitar título <kbd>R</kbd></button>
-    <button class="bt-pular" id="bt-p">Pular <kbd>→</kbd></button>
-    <button class="bt-aprovar" id="bt-a">✔ Aprovar título <kbd>A</kbd></button>
+<div id="scroll">
+    <table>
+        <thead><tr>
+            <th style="width:34%">Problema</th>
+            <th style="width:15%">No Sienge</th>
+            <th style="width:15%">No documento</th>
+            <th style="width:14%">Diferença</th>
+            <th class="c" style="width:12%">Sua decisão</th>
+        </tr></thead>
+        <tbody id="corpo"></tbody>
+    </table>
+    <div id="estado-vazio" class="fim" style="display:none"></div>
 </div>
-
-<div id="veu"><div class="painel-lista">
-    <h3>Pular para um título</h3>
-    <input id="pl-busca" placeholder="🔍 Fornecedor ou nº do título...">
-    <div id="pl-lista"></div>
-</div></div>
 
 <div class="toast" id="toast"></div>
 
 <script>
 "use strict";
-/* ============ vocabulário ============ */
+/* ============ vocabulário curto e claro ============ */
 const NOMES = {
-    "PAGAMENTO_DESTINO_DIVERGENTE": "O dinheiro vai para um CNPJ diferente do credor",
-    "CNPJ_DIVERGENTE": "CNPJ da nota é diferente do credor",
-    "VALOR_DIVERGENTE": "Valor do título é diferente do valor da nota",
-    "LIQUIDO_BRUTO_DIVERGENTE": "Líquido não bate com bruto − retenções (nota)",
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Dinheiro vai para outro CNPJ (não é o credor)",
+    "CNPJ_DIVERGENTE": "Nota emitida por CNPJ diferente do credor",
+    "VALOR_DIVERGENTE": "Valor do título ≠ valor da nota",
+    "LIQUIDO_BRUTO_DIVERGENTE": "Líquido não bate com bruto − retenções",
     "LIQUIDO_PARCELA_DIVERGENTE": "Parcela − retenções não bate com o valor a pagar",
-    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto é diferente do valor a pagar",
-    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto não confere com a forma de pagamento",
-    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto é diferente do título",
-    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito: forma errada para o banco de destino",
-    "IMPOSTO_DIVERGENTE": "Imposto retido é diferente do destacado na nota",
-    "IMPOSTO_NF_DIVERGENTE": "Retenção do título é diferente da destacada na nota",
-    "IMPOSTO_NAO_RETIDO": "A nota destaca retenção que o título não lançou",
+    "BOLETO_VALOR_DIVERGENTE": "Boleto cobra valor diferente do título",
+    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto ≠ forma de pagamento",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Boleto vence em data diferente do título",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito: forma errada p/ banco destino",
+    "IMPOSTO_DIVERGENTE": "Imposto retido ≠ destacado na nota",
+    "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
+    "IMPOSTO_NAO_RETIDO": "Nota destaca retenção não lançada no título",
     "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
     "RETENCAO_INDEVIDA_SIMPLES": "Retenção federal de fornecedor do Simples",
     "CHAVE_NFE_INVALIDA": "Chave de NF-e inválida",
     "BOLETO_NAO_ENCONTRADO": "Boleto não encontrado no DDA",
-    "SEM_ANEXO": "Título sem anexo no Sienge",
-    "ANEXO_ILEGIVEL": "Anexo não lido (OCR pendente)",
+    "SEM_ANEXO": "Título sem nenhum documento anexado",
+    "ANEXO_ILEGIVEL": "Documento não lido (OCR pendente)",
     "PIX_NAO_VERIFICAVEL": "Chave Pix não permite confirmar o titular",
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
-    "NF_SEM_CNPJ_DO_CREDOR": "O CNPJ do credor não aparece na NF anexada",
+    "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor não aparece na NF anexada",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
 const DICAS = {
-    "PAGAMENTO_DESTINO_DIVERGENTE": "Exija cessão de crédito ou autorização formal antes de aprovar.",
-    "LIQUIDO_PARCELA_DIVERGENTE": "Confira as retenções lançadas — a conta não fecha.",
-    "BOLETO_VALOR_DIVERGENTE": "O boleto anexado cobra outro valor. Pedir boleto correto?",
-    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "Corrigir a forma de pagamento no Sienge antes da remessa.",
-    "BOLETO_BANCO_INCOMPATIVEL": "Corrigir a forma de pagamento no Sienge antes da remessa.",
-    "FORMA_PAGAMENTO_AUSENTE": "Sem forma cadastrada o título não entra na remessa.",
-    "SEM_ANEXO": "Cobrar o lançador — pagamento sem documento.",
-    "PIX_NAO_VERIFICAVEL": "Chave de e-mail/telefone: confirme o titular com o fornecedor.",
-    "IMPOSTO_NAO_RETIDO": "Risco de pagar a mais e ficar com o passivo fiscal.",
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Exigir cessão de crédito ou autorização do credor",
+    "BOLETO_VALOR_DIVERGENTE": "Pedir boleto correto ou ajustar o título",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Pagar após o vencimento do boleto gera juros",
+    "LIQUIDO_PARCELA_DIVERGENTE": "Revisar as retenções lançadas",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "Corrigir a forma no Sienge — a remessa seria recusada",
+    "BOLETO_BANCO_INCOMPATIVEL": "Corrigir a forma no Sienge — a remessa seria recusada",
+    "FORMA_PAGAMENTO_AUSENTE": "Sem forma cadastrada o título não entra na remessa",
+    "SEM_ANEXO": "Cobrar o documento de quem lançou",
+    "PIX_NAO_VERIFICAVEL": "Confirmar a chave com o fornecedor",
+    "IMPOSTO_NAO_RETIDO": "Risco de pagar a mais e ficar com o passivo fiscal",
+    "NF_SEM_CNPJ_DO_CREDOR": "Abrir o anexo e conferir se a nota é do fornecedor",
+    "RETENCAO_INDEVIDA_SIMPLES": "Optante do Simples não sofre retenção federal",
 };
 
 /* ============ estado ============ */
 let TOK = sessionStorage.getItem("auth_token");
-let EXEC = null, DIVS = [], PAGS = [], TITULOS = [], IDX = 0;
+let EXEC = null, DIVS = [], PAGS = [], TITULOS = [];
+let FILTRO = "PENDENTES", BUSCA = "";
+const EXPANDIDOS = new Set();
 
 const $ = id => document.getElementById(id);
 const H = () => ({ "Authorization": "Basic " + TOK, "Content-Type": "application/json" });
 const dinheiro = v => v == null ? "–" : Number(v).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
 const dig = v => String(v || "").replace(/\D/g, "");
-const fmt = s => {
-    const t = String(s ?? "").trim();
-    return /^\d{1,10}\.\d{2}$/.test(t) ? dinheiro(parseFloat(t)) : t;
-};
-const dataBR = s => {
-    const t = String(s ?? "").trim();
-    const m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    return m ? `${m[3]}/${m[2]}/${m[1]}` : t;
-};
+const numDe = s => { const m = String(s ?? "").match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+const dataDe = s => { const m = String(s ?? "").match(/\d{4}-\d{2}-\d{2}/); return m ? m[0] : null; };
+const dataBR = s => { const m = String(s ?? "").match(/(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (s || ""); };
+const cnpjDe = s => { const d = dig(s); return d.length === 14 ? d : null; };
+const fmtCNPJ = d => d ? `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}` : "";
 function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("show");
     clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1800); }
+
+/* ============ colunas: No Sienge / No documento / Diferença ============ */
+function colunas(d) {
+    const S = d.valor_sienge_campo, V = d.valor_boleto_campo && d.valor_boleto_campo !== "-" ? d.valor_boleto_campo
+            : (d.valor_nfe_campo && d.valor_nfe_campo !== "-" ? d.valor_nfe_campo : null);
+    // dinheiro
+    const nS = numDe(S), nV = numDe(V);
+    const dS = dataDe(S), dV = dataDe(V);
+    const cS = cnpjDe(S), cV = cnpjDe(V);
+    if (dS && dV) {
+        const dias = Math.round((new Date(dV) - new Date(dS)) / 86400000);
+        return { s: dataBR(dS), v: dataBR(dV), diverge: dS !== dV,
+                 delta: dias ? Math.abs(dias) + " dia" + (Math.abs(dias) > 1 ? "s" : "") : null };
+    }
+    if (cS && cV) {
+        return { s: `<span class="cnpj">${fmtCNPJ(cS)}</span>`, v: `<span class="cnpj">${fmtCNPJ(cV)}</span>`,
+                 diverge: cS !== cV, delta: cS !== cV ? "outro CNPJ" : null };
+    }
+    if (nS != null && nV != null && /\d\.\d{2}\b/.test(String(S)) && /\d\.\d{2}\b/.test(String(V))) {
+        return { s: dinheiro(nS), v: dinheiro(nV), diverge: Math.abs(nS - nV) > 0.05,
+                 delta: Math.abs(nS - nV) > 0.05 ? dinheiro(Math.abs(nS - nV)) : null };
+    }
+    // sem par comparável: mostra o que existir, sem delta
+    const fmt1 = x => { const n = numDe(x); return (n != null && /^\d+\.\d{2}$/.test(String(x).trim())) ? dinheiro(n) : (x || null); };
+    return { s: fmt1(S), v: fmt1(V), diverge: false, delta: null };
+}
 
 /* ============ carga ============ */
 async function init() {
@@ -266,8 +299,6 @@ async function carregar(exec) {
     DIVS = d; PAGS = p || [];
     DIVS.forEach(x => { if (!x.status_revisao) x.status_revisao = "PENDENTE"; });
     montar();
-    IDX = TITULOS.findIndex(t => t.pendentes > 0);
-    if (IDX < 0) IDX = 0;
     render();
 }
 
@@ -287,7 +318,6 @@ function montar() {
         recontar(t);
         return t;
     });
-    // ordem de triagem: críticas primeiro, depois atenção, depois maiores valores
     TITULOS.sort((a, b) => (b.critPend - a.critPend) || (b.pendentes - a.pendentes) || ((b.valor||0) - (a.valor||0)));
 }
 function recontar(t) {
@@ -297,8 +327,6 @@ function recontar(t) {
     t.aprovados = t.divs.filter(d => d.status_revisao === "APROVADO").length;
     t.rejeitados = t.divs.filter(d => d.status_revisao === "REJEITADO").length;
 }
-
-/* ============ dedup (mesma constatação por 2 caminhos) ============ */
 function problemasUnicos(t) {
     t.divs.forEach(d => { d._irmaos = []; });
     const vistos = new Map(), unicos = [];
@@ -311,168 +339,175 @@ function problemasUnicos(t) {
     return unicos;
 }
 
-/* ============ contexto de pagamento relevante ============ */
-function contextoHTML(t) {
+/* ============ filtros ============ */
+const FILTROS = [
+    ["PENDENTES", "Pendentes"], ["CRITICAS", "Críticas"], ["ATENCAO", "Atenção"],
+    ["DECIDIDOS", "Decididos"], ["TODOS", "Todos"],
+];
+function passaFiltroDiv(d) {
+    const st = d.status_revisao;
+    switch (FILTRO) {
+        case "PENDENTES": return st === "PENDENTE";
+        case "CRITICAS": return st === "PENDENTE" && d.criticidade === "CRITICA";
+        case "ATENCAO": return st === "PENDENTE" && d.criticidade === "ATENCAO";
+        case "DECIDIDOS": return st !== "PENDENTE";
+        default: return true;
+    }
+}
+function contar(f) {
+    const antigo = FILTRO; FILTRO = f;
+    let n = 0;
+    TITULOS.forEach(t => { n += problemasUnicos(t).filter(passaFiltroDiv).length; });
+    FILTRO = antigo;
+    return n;
+}
+function renderFiltros() {
+    const c = $("filtros"); c.innerHTML = "";
+    FILTROS.forEach(([f, label]) => {
+        const b = document.createElement("button");
+        b.className = (FILTRO === f ? "on " : "") + (f === "CRITICAS" ? "fc" : f === "ATENCAO" ? "fw" : "");
+        b.innerHTML = `${label} <b>${contar(f)}</b>`;
+        b.onclick = () => { FILTRO = f; render(); };
+        c.appendChild(b);
+    });
+}
+
+/* ============ render da tabela ============ */
+function render() {
+    renderFiltros();
+    atualizarProgresso();
+    const corpo = $("corpo"); corpo.innerHTML = "";
+    const vazio = $("estado-vazio");
+
+    const busca = BUSCA.toLowerCase();
+    let linhasVisiveis = 0;
+
+    TITULOS.forEach(t => {
+        const probs = problemasUnicos(t).filter(d => {
+            if (!passaFiltroDiv(d)) return false;
+            if (busca) {
+                const alvo = (t.numero + " " + t.fornecedor + " " + (NOMES[d.tipo] || d.tipo)).toLowerCase();
+                if (!alvo.includes(busca)) return false;
+            }
+            return true;
+        });
+        if (!probs.length) return;
+        linhasVisiveis += probs.length;
+
+        // ===== linha do título =====
+        const tr = document.createElement("tr");
+        tr.className = "grupo";
+        const estadoDireita = t.pendentes
+            ? `<button class="g-aprovar">✓ Aprovar título (${t.pendentes})</button>`
+            : (t.rejeitados ? `<span class="g-ok" style="color:var(--muted)">✗ ${t.rejeitados} rejeitado(s)</span>`
+                            : `<span class="g-ok">✓ revisado</span>`);
+        tr.innerHTML = `
+            <td colspan="2">
+                <div class="g-forn">${t.fornecedor || "Fornecedor"} <span style="font-weight:600;color:var(--muted)">· ${t.numero}${t.pag?.parcela ? "/" + t.pag.parcela : ""}</span></div>
+                <div class="g-meta">${t.cnpj || ""}${t.pag?.regime ? " · " + t.pag.regime : ""} · <span class="g-pagto">💳 dados do pagamento ${EXPANDIDOS.has(t.numero) ? "▴" : "▾"}</span></div>
+            </td>
+            <td colspan="3">
+                <div class="g-fatos">
+                    <div class="g-fato"><div class="k">Valor a pagar</div><div class="v">${dinheiro(t.valor)}</div></div>
+                    <div class="g-fato"><div class="k">Vencimento</div><div class="v">${dataBR(t.venc)}</div></div>
+                    ${t.pag?.forma ? `<div class="g-fato"><div class="k">Forma</div><div class="v" style="font-size:12.5px">${t.pag.forma}</div></div>` : ""}
+                    ${estadoDireita}
+                </div>
+            </td>`;
+        const btAp = tr.querySelector(".g-aprovar");
+        if (btAp) btAp.onclick = () => decidirTitulo(t, "APROVADO");
+        tr.querySelector(".g-pagto").onclick = () => {
+            EXPANDIDOS.has(t.numero) ? EXPANDIDOS.delete(t.numero) : EXPANDIDOS.add(t.numero);
+            render();
+        };
+        corpo.appendChild(tr);
+
+        // ===== pagamento expandido =====
+        if (EXPANDIDOS.has(t.numero) && t.pag) corpo.appendChild(pagtoRow(t));
+
+        // ===== linhas de problema =====
+        probs.forEach(d => corpo.appendChild(aptoRow(d, t)));
+    });
+
+    if (!linhasVisiveis) {
+        const pend = DIVS.filter(d => d.status_revisao === "PENDENTE").length;
+        vazio.style.display = "";
+        if (FILTRO !== "TODOS" && pend === 0 && DIVS.length) {
+            const apr = DIVS.filter(d => d.status_revisao === "APROVADO").length;
+            const rej = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
+            vazio.innerHTML = `<div class="emoji">🎉</div><h2>Tudo revisado!</h2>
+                <p>${apr} aprovado(s) · ${rej} rejeitado(s). A remessa está liberada.</p>
+                <div class="acoes">${rej ? '<button class="primario" onclick="exportarRejeitados()">⬇ Baixar rejeitados</button>' : ""}</div>`;
+        } else {
+            vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nada aqui</h2><p>Nenhum apontamento com esse filtro/busca.</p>`;
+        }
+    } else vazio.style.display = "none";
+}
+
+function aptoRow(d, t) {
+    const st = d.status_revisao;
+    const tr = document.createElement("tr");
+    tr.className = "apto" + (st !== "PENDENTE" ? " decidido" : "");
+    const c = colunas(d);
+    const nx = d._irmaos?.length ? `<span class="nx" title="confirmado por ${d._irmaos.length + 1} verificações">${d._irmaos.length + 1}×</span>` : "";
+    const dica = DICAS[d.tipo] ? `<div class="p-sub">→ ${DICAS[d.tipo]}</div>` : "";
+
+    const acoes = st === "PENDENTE"
+        ? `<button class="sim" title="Aprovar">✓</button><button class="nao" title="Rejeitar">✗</button>`
+        : `<span class="st ${st}">${st === "APROVADO" ? "✓ aprovado" : "✗ rejeitado"}</span><button class="re" title="Reabrir">↩</button>`;
+
+    tr.innerHTML = `
+        <td><div class="p-cell"><span class="dot ${d.criticidade}"></span>
+            <div><div class="p-label">${NOMES[d.tipo] || d.tipo}${nx}</div>${dica}</div></div></td>
+        <td><span class="vcell">${c.s || '<span class="vazio">—</span>'}</span></td>
+        <td><span class="vcell ${c.diverge ? "doc-div" : ""}">${c.v || '<span class="vazio">—</span>'}</span></td>
+        <td>${c.delta ? `<span class="delta">${c.delta}</span>` : '<span class="vazio">—</span>'}</td>
+        <td><div class="d-cell">${acoes}</div></td>`;
+
+    const sim = tr.querySelector(".sim"), nao = tr.querySelector(".nao"), re = tr.querySelector(".re");
+    if (sim) sim.onclick = () => decidir(d, t, "APROVADO");
+    if (nao) nao.onclick = () => decidir(d, t, "REJEITADO");
+    if (re) re.onclick = () => decidir(d, t, "PENDENTE");
+    return tr;
+}
+
+function pagtoRow(t) {
     const p = t.pag;
-    if (!p) return "";
-    const tipos = t.divs.map(d => d.tipo).join(" ");
-    const linhas = [];
-    const li = (k, v) => v && linhas.push(`<div class="linha"><span class="k">${k}</span><span class="v">${v}</span></div>`);
-
-    if (/BOLETO/.test(tipos)) {
-        li("Boleto de", [p.banco_boleto, p.valor_boleto != null ? dinheiro(p.valor_boleto) : null].filter(Boolean).join(" · "));
-        li("Linha digitável", p.linha_digitavel ? `<span class="mono">${p.linha_digitavel}</span>` : null);
-    }
-    if (/DESTINO|PIX/.test(tipos)) {
-        li("Chave Pix" + (p.tipo_chave_pix ? ` (${p.tipo_chave_pix})` : ""), p.chave_pix);
-        const c1 = dig(p.cnpj_credor), c2 = dig(p.cnpj_destino);
-        if (p.cnpj_destino) li("CNPJ destino", p.cnpj_destino + (c1 && c2
-            ? (c1 === c2 ? ' <span class="ok">✓ é o credor</span>' : ' <span class="bad">✗ NÃO é o credor</span>') : ""));
-        li("Titular", p.titular);
-    }
-    if (/TRANSFERENCIA/.test(tipos)) {
-        li("Conta destino", [p.banco, p.agencia, p.conta].filter(Boolean).join(" · "));
-        li("Titular", p.titular);
-    }
-    if (/IMPOSTO|RETENCAO|LIQUIDO/.test(tipos)) {
-        if (p.retencoes) {
-            try {
-                const r = JSON.parse(p.retencoes);
-                li("Retenções", Object.entries(r).map(([k, v]) => `${k} ${dinheiro(v)}`).join(" · "));
-            } catch (e) { /* ignora */ }
-        }
-        if (p.liquido_calc != null) {
-            const bate = Math.abs(p.liquido_calc - (t.valor || 0)) <= 0.05;
-            li("Líquido calculado", dinheiro(p.liquido_calc) + (bate
-                ? ' <span class="ok">✓ bate com o fluxo</span>'
-                : ` <span class="bad">✗ fluxo é ${dinheiro(t.valor)}</span>`));
-        }
-    }
-
-    // tudo, escondido num expansor
-    const tudo = [];
-    const item = (k, v) => v && tudo.push(`<div class="linha"><span class="k">${k}</span><span class="v">${v}</span></div>`);
-    item("Forma", p.forma); item("Valor da parcela (bruto)", p.valor != null ? dinheiro(p.valor) : null);
-    item("Chave Pix", p.chave_pix); item("Banco · Ag · Conta", [p.banco, p.agencia, p.conta].filter(Boolean).join(" · "));
-    item("Titular", p.titular); item("CNPJ destino", p.cnpj_destino);
-    item("Linha digitável", p.linha_digitavel ? `<span class="mono">${p.linha_digitavel}</span>` : null);
+    const tr = document.createElement("tr");
+    tr.className = "pagto-row";
+    const c1 = dig(p.cnpj_credor), c2 = dig(p.cnpj_destino);
+    const itens = [];
+    const item = (k, v, mono) => v && itens.push(`<div><div class="k">${k}</div><div class="v ${mono ? "mono" : ""}">${v}</div></div>`);
+    item("Forma", p.forma);
+    item("Valor da parcela (bruto)", p.valor != null ? dinheiro(p.valor) : null);
+    item("Chave Pix" + (p.tipo_chave_pix ? " (" + p.tipo_chave_pix + ")" : ""), p.chave_pix);
+    item("Banco · Ag · Conta", [p.banco, p.agencia, p.conta].filter(Boolean).join(" · "));
+    item("Titular", p.titular);
+    item("CNPJ destino", p.cnpj_destino ? p.cnpj_destino + (c1 && c2 ? (c1 === c2
+        ? ' <span class="ok">✓ é o credor</span>' : ' <span class="bad">✗ não é o credor</span>') : "") : null);
+    item("Linha digitável", p.linha_digitavel, true);
     item("Banco do boleto", p.banco_boleto);
     item("Valor do boleto", p.valor_boleto != null ? dinheiro(p.valor_boleto) : null);
-    item("Regime", p.regime); item("Confronto CNPJ", p.confronto);
-
-    return `<div class="ctx">
-        ${linhas.join("") || `<div class="linha"><span class="k">Pagamento</span><span class="v">${p.forma || "—"}${p.regime ? " · " + p.regime : ""}</span></div>`}
-        <details><summary>ver todos os dados do pagamento</summary><div class="tudo">${tudo.join("")}</div></details>
-    </div>`;
-}
-
-/* ============ render principal ============ */
-function stats() {
-    const total = TITULOS.length;
-    const feitos = TITULOS.filter(t => t.pendentes === 0).length;
-    const critRestantes = TITULOOS_SAFE().reduce((a, t) => a + t.critPend, 0);
-    return { total, feitos, critRestantes };
-}
-function TITULOOS_SAFE() { return TITULOS; }
-
-function render() {
-    montarContagens();
-    const t = TITULOS[IDX];
-    const palco = $("palco");
-    const restantes = TITULOS.filter(x => x.pendentes > 0).length;
-
-    if (!TITULOS.length) { palco.innerHTML = "<div class='fim'><div class='emoji'>📭</div><h2>Nenhum apontamento neste ciclo</h2></div>"; $("decisao").style.display = "none"; return; }
-
-    if (restantes === 0) {
-        const apr = DIVS.filter(d => d.status_revisao === "APROVADO").length;
-        const rej = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
-        palco.innerHTML = `<div class="fim">
-            <div class="emoji">🎉</div>
-            <h2>Ciclo revisado!</h2>
-            <p>${apr} aprovado(s) · ${rej} rejeitado(s). A remessa está liberada para montagem.</p>
-            <div class="acoes">
-                ${rej ? '<button class="primario" onclick="exportarRejeitados()">⬇ Baixar rejeitados (Excel)</button>' : ""}
-                <button onclick="abrirLista()">Rever algum título</button>
-            </div></div>`;
-        $("decisao").style.display = "none";
-        return;
+    if (p.retencoes) { try {
+        const r = JSON.parse(p.retencoes);
+        item("Retenções", Object.entries(r).map(([k, v]) => `${k} ${dinheiro(v)}`).join(" · "));
+    } catch (e) {} }
+    if (p.liquido_calc != null) {
+        const bate = Math.abs(p.liquido_calc - (t.valor || 0)) <= 0.05;
+        item("Líquido calculado", dinheiro(p.liquido_calc) + (bate ? ' <span class="ok">✓ bate com o fluxo</span>' : ` <span class="bad">✗ fluxo ${dinheiro(t.valor)}</span>`));
     }
-    if (!t) { IDX = TITULOS.findIndex(x => x.pendentes > 0); return render(); }
-
-    const probs = problemasUnicos(t);
-    palco.innerHTML = `<div class="cartao">
-        <div class="cab">
-            <div class="forn">${t.fornecedor || "Fornecedor"}</div>
-            <div class="meta">Título <b>${t.numero}</b>${t.pag?.parcela ? " · parcela " + t.pag.parcela : ""}${t.cnpj ? " · CNPJ " + t.cnpj : ""}${t.pag?.regime ? " · " + t.pag.regime : ""}</div>
-            <div class="nums">
-                <div><div class="n">Valor a pagar</div><div class="valor">${dinheiro(t.valor)}</div></div>
-                <div><div class="n">Vencimento</div><div class="v">${dataBR(t.venc)}</div></div>
-                ${t.pag?.forma ? `<div><div class="n">Forma</div><div class="v">${t.pag.forma}</div></div>` : ""}
-            </div>
-        </div>
-        <div class="problemas" id="probs"></div>
-        ${contextoHTML(t)}
-        <input id="obs" placeholder="Observação (vai junto na aprovação/rejeição — opcional)...">
-    </div>`;
-
-    const box = $("probs");
-    probs.forEach(d => box.appendChild(probHTML(d, t)));
-
-    $("decisao").style.display = "";
-    $("bt-a").innerHTML = `✔ Aprovar título <kbd>A</kbd>`;
-    $("bt-a").disabled = !t.pendentes;
-    $("bt-r").disabled = !t.pendentes;
-    $("bt-a").onclick = () => decidirTitulo(t, "APROVADO");
-    $("bt-r").onclick = () => decidirTitulo(t, "REJEITADO");
-    $("bt-p").onclick = () => pular();
-}
-
-function probHTML(d, t) {
-    const st = d.status_revisao;
-    const el = document.createElement("div");
-    el.className = "prob " + d.criticidade + (st !== "PENDENTE" ? " decidido" : "");
-    const tag = d.criticidade === "CRITICA" ? '<span class="tag crit">CRÍTICA</span>' : '<span class="tag warn">ATENÇÃO</span>';
-    const stTag = st === "APROVADO" ? '<span class="tag ok">APROVADO</span>' : st === "REJEITADO" ? '<span class="tag cinza">REJEITADO</span>' : "";
-    const nx = d._irmaos?.length ? `<span class="tag cinza">${d._irmaos.length + 1}×</span>` : "";
-
-    const sienge = d.valor_sienge_campo && d.valor_sienge_campo !== "-" ? d.valor_sienge_campo : null;
-    const verif = (d.valor_boleto_campo && d.valor_boleto_campo !== "-" ? d.valor_boleto_campo : null)
-               || (d.valor_nfe_campo && d.valor_nfe_campo !== "-" ? d.valor_nfe_campo : null);
-    let dif = "";
-    if (sienge && verif) {
-        dif = `<div class="dif"><span class="rotulo">Sienge</span><span class="de">${dataBR(fmt(sienge))}</span>
-               <span class="seta">➜</span><span class="rotulo">verificado</span><span class="para">${dataBR(fmt(verif))}</span></div>`;
-    } else if (sienge || verif) {
-        dif = `<div class="dif"><span class="para">${dataBR(fmt(sienge || verif))}</span></div>`;
-    }
-    const dica = DICAS[d.tipo] ? `<div class="dica">${DICAS[d.tipo]}</div>` : "";
-    const quem = d.revisado_por ? `<div class="quem">por ${d.revisado_por}${d.observacao_revisao ? " — “" + d.observacao_revisao + "”" : ""}</div>` : "";
-
-    el.innerHTML = `<div class="corpo">
-            <div class="frase">${NOMES[d.tipo] || d.tipo}${tag}${stTag}${nx}</div>
-            ${dica}${dif}${quem}
-        </div>
-        <div class="mini-acao">${st === "PENDENTE"
-            ? '<button class="sim" title="Aprovar só este">✓</button><button class="nao" title="Rejeitar só este">✗</button>'
-            : '<button title="Reabrir">↩</button>'}</div>`;
-
-    const [b1, b2] = el.querySelectorAll("button");
-    if (st === "PENDENTE") {
-        b1.onclick = () => decidir(d, t, "APROVADO");
-        b2.onclick = () => decidir(d, t, "REJEITADO");
-    } else {
-        b1.onclick = () => decidir(d, t, "PENDENTE");
-    }
-    return el;
+    item("Regime", p.regime);
+    tr.innerHTML = `<td colspan="5"><div class="pagto-grid">${itens.join("")}</div></td>`;
+    return tr;
 }
 
 /* ============ ações ============ */
-async function post(d, status, obs) {
+async function post(d, status) {
     const alvos = [d, ...(d._irmaos || [])];
     for (const a of alvos) {
         const r = await fetch("/api/divergencias/" + a.id + "/revisao", {
             method: "POST", headers: H(),
-            body: JSON.stringify({ status, observacao: obs || a.observacao_revisao || null }),
+            body: JSON.stringify({ status, observacao: a.observacao_revisao || null }),
         });
         if (!r.ok) throw 0;
         Object.assign(a, await r.json());
@@ -480,73 +515,35 @@ async function post(d, status, obs) {
 }
 async function decidir(d, t, status) {
     try {
-        await post(d, status, $("obs")?.value);
+        await post(d, status);
         recontar(t);
-        if (t.pendentes === 0 && status !== "PENDENTE") { toast("Título " + t.numero + " concluído ✓"); avancar(); }
-        else render();
+        if (status !== "PENDENTE") toast(status === "APROVADO" ? "Aprovado ✓" : "Rejeitado ✗");
+        render();
     } catch { toast("Erro ao salvar — verifique o login."); }
 }
 async function decidirTitulo(t, status) {
-    const pend = t.divs.filter(d => d.status_revisao === "PENDENTE" && !pertenceAIrmaos(d, t));
+    const agrupados = new Set();
+    t.divs.forEach(d => (d._irmaos || []).forEach(x => agrupados.add(x)));
+    const pend = t.divs.filter(d => d.status_revisao === "PENDENTE" && !agrupados.has(d));
     try {
-        for (const d of pend) await post(d, status, $("obs")?.value);
+        for (const d of pend) await post(d, status);
         recontar(t);
-        toast((status === "APROVADO" ? "✔ Aprovado" : "✖ Rejeitado") + " — título " + t.numero);
-        avancar();
+        toast((status === "APROVADO" ? "✔ Título " : "✖ Título ") + t.numero + " concluído");
+        render();
     } catch { toast("Erro ao salvar — verifique o login."); }
 }
-function pertenceAIrmaos(d, t) { return t.divs.some(x => (x._irmaos || []).includes(d)); }
 
-function avancar() {
-    montar(); // reordena e reconta
-    const prox = TITULOS.findIndex(x => x.pendentes > 0);
-    IDX = prox >= 0 ? prox : 0;
-    render();
-    $("palco").scrollTop = 0;
-}
-function pular() {
-    const pendentes = TITULOS.map((t, i) => ({ t, i })).filter(x => x.t.pendentes > 0);
-    if (pendentes.length <= 1) return toast("É o último pendente.");
-    const atual = pendentes.findIndex(x => x.i === IDX);
-    IDX = pendentes[(atual + 1) % pendentes.length].i;
-    render(); $("palco").scrollTop = 0;
-}
-
-function montarContagens() {
-    const total = TITULOS.length;
-    const feitos = TITULOS.filter(t => t.pendentes === 0).length;
-    const crit = TITULOS.reduce((a, t) => a + t.critPend, 0);
+function atualizarProgresso() {
+    const total = DIVS.length;
+    const feitos = DIVS.filter(d => d.status_revisao !== "PENDENTE").length;
+    const crit = DIVS.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "CRITICA").length;
     const pct = total ? Math.round(100 * feitos / total) : 0;
     $("prog-fill").style.width = pct + "%";
-    $("prog-txt").innerHTML = `<b>${feitos}</b> de <b>${total}</b> títulos decididos` +
-        (crit ? ` · <b style="color:var(--crit)">${crit} críticas restam</b>` : " · ✓ sem críticas");
-    $("bt-lista-n").textContent = total - feitos ? (total - feitos) : "";
+    $("prog-txt").innerHTML = `<b>${feitos}</b>/${total} revisados` +
+        (crit ? ` · <b style="color:var(--crit)">${crit} críticas</b>` : " · ✓");
 }
 
-/* ============ lista / exportar ============ */
-function abrirLista() {
-    const cont = $("pl-lista"); cont.innerHTML = "";
-    const busca = ($("pl-busca").value || "").toLowerCase();
-    TITULOS.forEach((t, i) => {
-        if (busca && !((t.numero + " " + t.fornecedor).toLowerCase().includes(busca))) return;
-        const el = document.createElement("div");
-        el.className = "pl-item";
-        const estado = t.pendentes === 0
-            ? (t.rejeitados ? '<span class="tag cinza">✗ ' + t.rejeitados + "</span>" : '<span class="tag ok">✓ ok</span>')
-            : (t.critPend ? `<span class="tag crit">${t.critPend} crítica${t.critPend > 1 ? "s" : ""}</span>` : `<span class="tag warn">${t.pendentes} pend.</span>`);
-        el.innerHTML = `<span class="num">${t.numero}</span><span class="forn">${t.fornecedor || ""}</span>
-                        <span class="val">${dinheiro(t.valor)}</span>${estado}`;
-        el.onclick = () => { IDX = i; fecharLista(); render(); };
-        cont.appendChild(el);
-    });
-    $("veu").classList.add("aberto");
-    $("pl-busca").focus();
-}
-function fecharLista() { $("veu").classList.remove("aberto"); }
-$("bt-lista").onclick = abrirLista;
-$("pl-busca").oninput = abrirLista;
-$("veu").onclick = e => { if (e.target === $("veu")) fecharLista(); };
-
+/* ============ exportar / busca ============ */
 $("bt-rej").onclick = exportarRejeitados;
 async function exportarRejeitados() {
     if (!EXEC) return;
@@ -560,20 +557,7 @@ async function exportarRejeitados() {
     a.click();
     toast(n + " rejeitado(s) exportados ⬇");
 }
-
-/* ============ teclado ============ */
-document.addEventListener("keydown", e => {
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
-        if (e.key === "Escape") document.activeElement.blur();
-        return;
-    }
-    if ($("veu").classList.contains("aberto")) { if (e.key === "Escape") fecharLista(); return; }
-    const t = TITULOS[IDX];
-    if (!t) return;
-    if (e.key.toLowerCase() === "a" && t.pendentes) decidirTitulo(t, "APROVADO");
-    if (e.key.toLowerCase() === "r" && t.pendentes) decidirTitulo(t, "REJEITADO");
-    if (e.key === "ArrowRight") pular();
-});
+$("busca").addEventListener("input", e => { BUSCA = e.target.value; render(); });
 
 init();
 </script>
