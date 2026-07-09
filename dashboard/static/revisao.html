@@ -247,6 +247,14 @@ const $ = id => document.getElementById(id);
 const H = () => ({ "Authorization": "Basic " + TOK, "Content-Type": "application/json" });
 const dinheiro = v => v == null ? "–" : Number(v).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
 const dig = v => String(v || "").replace(/\D/g, "");
+// Formata um valor de campo: número decimal puro (ex.: "66578.12") vira R$;
+// datas (2026-07-10), CNPJs e textos passam intactos.
+const fmtCampo = s => {
+    if (s == null) return s;
+    const t = String(s).trim();
+    if (/^\d{1,10}\.\d{2}$/.test(t)) return dinheiro(parseFloat(t));
+    return t;
+};
 
 function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("show");
     clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600); }
@@ -473,8 +481,18 @@ function renderDetalhe() {
     if (!t.divs.length) html += `<div class="pagcard" style="color:var(--muted)">Nenhum apontamento — título liberado. ✓</div>`;
     det.innerHTML = html;
 
-    t.divs.sort((a, b) => (a.criticidade === "CRITICA" ? 0 : 1) - (b.criticidade === "CRITICA" ? 0 : 1));
-    t.divs.forEach(d => det.appendChild(cartaoApto(d, t)));
+    // Dedup: dois apontamentos com mesmo tipo/valores são a mesma constatação
+    // (ex.: valor do boleto conferido por dois caminhos). Mantém o 1º, agrupa o resto.
+    t.divs.forEach(d => { d._irmaos = []; });
+    const vistos = new Map();
+    const unicos = [];
+    t.divs.forEach(d => {
+        const chave = [d.tipo, d.valor_sienge_campo, d.valor_boleto_campo || d.valor_nfe_campo].join("|");
+        if (vistos.has(chave)) vistos.get(chave)._irmaos.push(d);
+        else { vistos.set(chave, d); unicos.push(d); }
+    });
+    unicos.sort((a, b) => (a.criticidade === "CRITICA" ? 0 : 1) - (b.criticidade === "CRITICA" ? 0 : 1));
+    unicos.forEach(d => det.appendChild(cartaoApto(d, t)));
 
     const bt = $("bt-tudo");
     if (bt) bt.onclick = () => aprovarTitulo(t);
@@ -498,19 +516,21 @@ function cartaoApto(d, t) {
     if (sienge && verif) {
         // diff visual: o que o Sienge diz -> o que foi verificado (divergente em vermelho)
         comps += `<div class="diff">
-            <div class="lado esq"><div class="k">Sienge diz</div><div class="v">${sienge}</div></div>
+            <div class="lado esq"><div class="k">Sienge diz</div><div class="v">${fmtCampo(sienge)}</div></div>
             <div class="seta">➜</div>
-            <div class="lado dir"><div class="k">Verificado</div><div class="v">${verif}</div></div>
+            <div class="lado dir"><div class="k">Verificado</div><div class="v">${fmtCampo(verif)}</div></div>
         </div>`;
         if (nf && verif !== nf)
-            comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${nf}</div></div>`;
+            comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${fmtCampo(nf)}</div></div>`;
     } else {
-        if (sienge) comps += `<div class="compbox"><div class="k">Sienge diz</div><div class="v">${sienge}</div></div>`;
-        if (nf) comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${nf}</div></div>`;
-        if (!nf && verif) comps += `<div class="compbox"><div class="k">Verificado</div><div class="v">${verif}</div></div>`;
+        if (sienge) comps += `<div class="compbox"><div class="k">Sienge diz</div><div class="v">${fmtCampo(sienge)}</div></div>`;
+        if (nf) comps += `<div class="compbox"><div class="k">Nota fiscal</div><div class="v">${fmtCampo(nf)}</div></div>`;
+        if (!nf && verif) comps += `<div class="compbox"><div class="k">Verificado</div><div class="v">${fmtCampo(verif)}</div></div>`;
     }
 
-    box.innerHTML = `<div class="top"><span class="nome">${NOMES[d.tipo] || d.tipo}</span>${badgeC}${badgeS}</div>
+    const nOcorr = (d._irmaos && d._irmaos.length)
+        ? `<span class="badge b-cinza" title="Mesma constatação detectada por mais de uma verificação">${d._irmaos.length + 1}× ocorrências</span>` : "";
+    box.innerHTML = `<div class="top"><span class="nome">${NOMES[d.tipo] || d.tipo}</span>${badgeC}${badgeS}${nOcorr}</div>
         ${explica}<div class="comp">${comps}</div>
         ${d.revisado_por ? `<div class="quem">revisado por <b>${d.revisado_por}</b>${d.revisado_em ? " em " + String(d.revisado_em).replace("T", " ").slice(0, 16) : ""}${d.observacao_revisao ? " — “" + d.observacao_revisao + "”" : ""}</div>` : ""}`;
 
@@ -539,13 +559,17 @@ function cartaoApto(d, t) {
 
 /* ============ ações ============ */
 async function salvar(d, status, observacao, silencioso) {
+    // aplica também aos apontamentos idênticos agrupados (dedup)
+    const alvos = [d, ...(d._irmaos || [])];
     try {
-        const r = await fetch("/api/divergencias/" + d.id + "/revisao", {
-            method: "POST", headers: H(),
-            body: JSON.stringify({ status, observacao: observacao || d.observacao_revisao || null }),
-        });
-        if (!r.ok) throw 0;
-        Object.assign(d, await r.json());
+        for (const alvo of alvos) {
+            const r = await fetch("/api/divergencias/" + alvo.id + "/revisao", {
+                method: "POST", headers: H(),
+                body: JSON.stringify({ status, observacao: observacao || alvo.observacao_revisao || null }),
+            });
+            if (!r.ok) throw 0;
+            Object.assign(alvo, await r.json());
+        }
         montarTitulos();
         if (!silencioso) {
             toast(status === "APROVADO" ? "Aprovado ✓" : status === "REJEITADO" ? "Rejeitado ✗" : "Reaberto ↩");
