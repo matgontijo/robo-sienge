@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Robô de Conferência · Grupo Garden</title>
-    <link rel="stylesheet" href="/static/style.css?v=12">
+    <link rel="stylesheet" href="/static/style.css?v=13">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -152,6 +152,7 @@
                             <div class="tab active" onclick="switchTab('divergencias')">Apontamentos</div>
                             <div class="tab" onclick="switchTab('logs')">Logs da execução</div>
                             <div class="tab" id="tab-relatorio" style="display:none;" onclick="baixarRelatorio()">📥 Baixar Excel</div>
+                            <div class="tab" id="tab-pasta" style="display:none;" onclick="abrirPastaAnexos()">📁 Abrir pasta dos anexos</div>
                             <div class="tab" id="tab-abortar" style="display:none; color: var(--critica)" onclick="abortarExecucao()">🛑 Abortar</div>
                         </div>
 
@@ -306,6 +307,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=12"></script>
+    <script src="/static/app.js?v=13"></script>
 </body>
 </html>

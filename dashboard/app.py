@@ -197,6 +197,25 @@ def download_relatorio(execucao_id: int):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+@app.get("/api/execucoes/{execucao_id}/abrir-pasta", dependencies=[Depends(get_current_user)])
+def abrir_pasta_anexos(execucao_id: int):
+    """Abre, no Explorer da máquina que roda o painel (o PC do usuário), a pasta
+    com os documentos deste ciclo: o dossiê (NF/boleto organizados) se existir,
+    senão a pasta geral de anexos. Retorna o caminho para exibir/copiar."""
+    import sys
+    dossie = os.path.abspath(os.path.join(config.OUTPUT_DIR, "dossie", f"ciclo_{execucao_id}"))
+    anexos = os.path.abspath(os.path.join(config.OUTPUT_DIR, "anexos"))
+    pasta = dossie if os.path.isdir(dossie) else anexos
+    existe = os.path.isdir(pasta)
+    aberto = False
+    if existe and sys.platform.startswith("win") and hasattr(os, "startfile"):
+        try:
+            os.startfile(pasta)  # noqa: S606 — ferramenta local, abre o Explorer
+            aberto = True
+        except Exception:  # noqa: BLE001
+            aberto = False
+    return {"pasta": pasta, "existe": existe, "aberto": aberto}
+
 @app.get("/api/execucoes/{execucao_id}/danfe", dependencies=[Depends(get_current_user)])
 def download_danfe(execucao_id: int, path: str):
     # Path traversal protection

@@ -304,7 +304,9 @@ async function selectExecucao(id) {
     renderDivergencias();
     
     // Tabs visibility
-    document.getElementById("tab-relatorio").style.display = data.execucao.status === "CONCLUIDO" ? "block" : "none";
+    const concluido = data.execucao.status === "CONCLUIDO";
+    document.getElementById("tab-relatorio").style.display = concluido ? "block" : "none";
+    document.getElementById("tab-pasta").style.display = concluido ? "block" : "none";
     document.getElementById("tab-abortar").style.display = (data.execucao.status === "RODANDO" && userRole !== "LEITURA") ? "block" : "none";
     
     // Load logs
@@ -356,6 +358,7 @@ function startSSE(id) {
         fetchHistorico();
         document.getElementById("tab-abortar").style.display = "none";
         document.getElementById("tab-relatorio").style.display = "block";
+        document.getElementById("tab-pasta").style.display = "block";
     });
 }
 
@@ -423,6 +426,19 @@ function abrirDanfe(path) {
 
 function baixarRelatorio() {
     window.open(`/api/execucoes/${currentExecId}/relatorio?token=${token}`, '_blank');
+}
+
+async function abrirPastaAnexos() {
+    try {
+        const r = await fetch(`/api/execucoes/${currentExecId}/abrir-pasta`, { headers: getHeaders() });
+        const d = await r.json();
+        if (d.aberto) return;                 // abriu o Explorer no PC — nada a fazer
+        if (!d.existe) { alert("A pasta de anexos deste ciclo ainda não foi criada."); return; }
+        // painel acessado de outro dispositivo (não é o PC do robô): mostra o caminho
+        prompt("Abra esta pasta no computador do robô:", d.pasta);
+    } catch (e) {
+        alert("Não foi possível abrir a pasta.");
+    }
 }
 
 async function abortarExecucao() {
