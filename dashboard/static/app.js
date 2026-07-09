@@ -530,14 +530,21 @@ function switchMainTab(viewName) {
     });
 
     const [t, s] = VIEW_TITULOS[viewName] || ["", ""];
-    document.getElementById('view-title').innerText = t;
-    document.getElementById('view-sub').innerText = s;
+    const vt = document.getElementById('view-title');
+    const vs = document.getElementById('view-sub');
+    if (vt) vt.innerText = t;
+    if (vs) vs.innerText = s;
+
+    // Conferência/Apresentação ocupam a tela toda (sem padding nem rolagem dupla)
+    const content = document.querySelector('.content');
+    if (content) content.classList.toggle('full-bleed',
+        viewName === 'conferencia' || viewName === 'presentation');
 
     if (viewName === 'settings') fetchConfig();
     if (viewName === 'conferencia') {
         // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
         const frame = document.getElementById('frame-conferencia');
-        if (frame && !frame.src) frame.src = '/static/revisao.html?v=5';
+        if (frame && !frame.src) frame.src = '/static/revisao.html?v=6';
         atualizarBadgeConferencia();
     }
 }

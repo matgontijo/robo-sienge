@@ -16,22 +16,28 @@ html, body { height:100%; }
 body { font-family:"Segoe UI",system-ui,Arial,sans-serif; background:var(--bg); color:var(--ink);
        display:flex; flex-direction:column; overflow:hidden; }
 
-/* ===================== HEADER ===================== */
-header { background:linear-gradient(120deg,#0e1f2b 0%,#123243 70%,#0f4c47 130%); color:#fff; padding:10px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
-header h1 { font-size:16.5px; font-weight:800; letter-spacing:.2px; }
-header .sub { font-size:11.5px; color:#9db8d4; }
-header select { padding:6px 10px; border-radius:8px; border:none; font-size:13px; }
-.hstats { display:flex; gap:8px; margin-left:auto; align-items:center; flex-wrap:wrap; }
-.pill { padding:4px 12px; border-radius:999px; font-size:12.5px; font-weight:700; background:rgba(255,255,255,.1); }
-.pill b { font-size:14px; }
-.pill.crit { background:#7f1d1d; } .pill.warn { background:#78350f; }
-.pill.okp { background:#14532d; }
-.ring { position:relative; width:46px; height:46px; }
-.ring svg { transform:rotate(-90deg); }
-.ring .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-             font-size:11px; font-weight:800; }
-.kbd-hint { font-size:11px; color:#9db8d4; }
-.kbd-hint kbd { background:rgba(255,255,255,.15); border-radius:4px; padding:1px 6px; font-family:inherit; }
+/* ===================== TOOLBAR (única, fina, clara) ===================== */
+header.toolbar {
+    background:var(--card); border-bottom:1px solid var(--line);
+    padding:9px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    flex-shrink:0;
+}
+header select { padding:7px 12px; border-radius:8px; border:1px solid var(--line);
+    font-size:13px; font-weight:700; background:#fff; color:var(--ink); }
+.tb-prog { display:flex; align-items:center; gap:10px; }
+.tb-bar { width:130px; height:8px; background:#e9eef4; border-radius:999px; overflow:hidden; }
+.tb-bar > div { height:100%; width:0%; background:linear-gradient(90deg,#16a34a,#4ade80); transition:width .3s; }
+.tb-num { font-size:12.5px; color:var(--muted); white-space:nowrap; }
+.tb-num b { color:var(--ink); font-size:13px; }
+.tb-pill { padding:4px 12px; border-radius:999px; font-size:12.5px; font-weight:700; white-space:nowrap; }
+.tb-pill b { font-size:13.5px; }
+.tb-pill.crit { background:var(--crit-bg); color:var(--crit); }
+.tb-pill.warn { background:var(--warn-bg); color:var(--warn); }
+.spacer { flex:1; }
+.kbd-hint { font-size:11.5px; color:var(--muted); white-space:nowrap; }
+.kbd-hint kbd { background:#eef2f6; border:1px solid var(--line); border-radius:4px; padding:1px 6px; font-family:inherit; }
+#bt-rej { background:#fff; color:var(--crit); border:1px solid #f3c4c0; font-size:12.5px; padding:8px 14px; border-radius:9px; font-weight:800; cursor:pointer; }
+#bt-rej:hover { background:var(--crit-bg); }
 
 /* ===================== LAYOUT ===================== */
 main { flex:1; display:flex; min-height:0; }
@@ -143,28 +149,17 @@ label.toggle { display:flex; gap:6px; align-items:center; font-size:12px; color:
 </head>
 <body>
 
-<header>
-    <div>
-        <h1>🛡️ Conferência de Pagamentos</h1>
-        <div class="sub">aprove ou rejeite cada apontamento antes da remessa</div>
-    </div>
+<header class="toolbar">
     <select id="sel-exec" title="Ciclo"></select>
-    <div class="hstats">
-        <span class="pill crit">🔴 <b id="h-crit">0</b> críticas pendentes</span>
-        <span class="pill warn">🟡 <b id="h-warn">0</b> atenções pendentes</span>
-        <span class="pill okp">✓ <b id="h-done">0</b> revisadas</span>
-        <div class="ring" title="Progresso da revisão">
-            <svg width="46" height="46">
-                <circle cx="23" cy="23" r="19" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="5"/>
-                <circle id="ring-bar" cx="23" cy="23" r="19" fill="none" stroke="#4ade80" stroke-width="5"
-                        stroke-linecap="round" stroke-dasharray="119.4" stroke-dashoffset="119.4"/>
-            </svg>
-            <div class="pct" id="ring-pct">0%</div>
-        </div>
-        <span class="kbd-hint"><kbd>↑</kbd><kbd>↓</kbd> navegar &nbsp;<kbd>A</kbd> aprovar título</span>
-        <button class="bt" id="bt-rej" style="background:#7f1d1d;color:#fff;font-size:12.5px;padding:8px 14px"
-                title="Baixar Excel com tudo que foi rejeitado neste ciclo">⬇ Rejeitados</button>
+    <div class="tb-prog" title="Progresso da revisão">
+        <div class="tb-bar"><div id="ring-bar"></div></div>
+        <span class="tb-num"><b id="ring-pct">0%</b> · <span id="h-done">0/0</span> revisadas</span>
     </div>
+    <span class="tb-pill crit"><b id="h-crit">0</b> críticas</span>
+    <span class="tb-pill warn"><b id="h-warn">0</b> atenções</span>
+    <span class="spacer"></span>
+    <span class="kbd-hint"><kbd>↑</kbd><kbd>↓</kbd> navegar · <kbd>A</kbd> aprova o título</span>
+    <button class="bt" id="bt-rej" title="Baixar Excel com tudo que foi rejeitado neste ciclo">⬇ Rejeitados</button>
 </header>
 
 <main>
@@ -340,7 +335,7 @@ function renderHeader() {
     $("h-done").textContent = done + "/" + DIVS.length;
     const pct = DIVS.length ? Math.round(100 * done / DIVS.length) : 0;
     $("ring-pct").textContent = pct + "%";
-    $("ring-bar").style.strokeDashoffset = 119.4 * (1 - pct / 100);
+    $("ring-bar").style.width = pct + "%";
 }
 
 function renderChips() {
