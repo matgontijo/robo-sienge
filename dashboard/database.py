@@ -110,13 +110,29 @@ class LogExecucao(Base):
 
     execucao = relationship("Execucao", back_populates="logs")
 
-# Configuração da Session
-engine = create_engine(f"sqlite:///{config.DASHBOARD_DB_PATH}", connect_args={"check_same_thread": False})
+# Configuração da Session — Postgres compartilhado (Render) ou SQLite local.
+# Uma única DATABASE_URL faz o ciclo local e o painel na nuvem verem os mesmos dados.
+_db_url = config.DATABASE_URL
+if _db_url:
+    # Render às vezes entrega "postgres://"; o SQLAlchemy 2.x exige "postgresql://".
+    if _db_url.startswith("postgres://"):
+        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(_db_url, pool_pre_ping=True)
+    IS_SQLITE = False
+else:
+    engine = create_engine(f"sqlite:///{config.DASHBOARD_DB_PATH}",
+                           connect_args={"check_same_thread": False})
+    IS_SQLITE = True
+
 Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def _migrar_colunas():
-    """Migração leve para bancos existentes (SQLite): adiciona colunas novas."""
+    """Migração leve para bancos SQLite ANTIGOS (adiciona colunas que faltam).
+    No Postgres o create_all já cria as tabelas com todas as colunas do modelo,
+    então esta migração roda só no SQLite."""
+    if not IS_SQLITE:
+        return
     from sqlalchemy import text
     novas = {
         "status_revisao": "TEXT DEFAULT 'PENDENTE'",

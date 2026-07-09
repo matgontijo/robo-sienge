@@ -49,11 +49,15 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./output")
 LOGS_DIR = os.getenv("LOGS_DIR", "./logs")
 
 # Dashboard
+# Em nuvens como o Render a porta vem na variável PORT — respeita ela primeiro.
 DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
-DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8000"))
+DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT") or os.getenv("PORT") or "8000")
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "admin")
 DASHBOARD_DB_PATH = os.getenv("DASHBOARD_DB_PATH", "./dashboard.db")
+# Banco compartilhado (Postgres no Render). Se vazio, usa o SQLite local acima.
+# Local e nuvem apontam para a MESMA DATABASE_URL para verem os mesmos dados.
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Garante que os diretórios existam
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -148,7 +152,8 @@ def reload_config():
     CRON_MINUTO = os.getenv("CRON_MINUTO", "00")
     
     DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "0.0.0.0")
-    DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "8000"))
+    DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT") or os.getenv("PORT") or "8000")
     DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
     DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "admin")
     DASHBOARD_DB_PATH = os.getenv("DASHBOARD_DB_PATH", "./dashboard.db")
+    DATABASE_URL = os.getenv("DATABASE_URL")

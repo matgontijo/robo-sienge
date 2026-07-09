@@ -1,0 +1,33 @@
+# Deploy no Render — banco Postgres compartilhado + painel web.
+# O ciclo pesado (7 min, credenciais Sienge) roda LOCAL no PC 1x/semana e grava
+# neste mesmo Postgres; o painel na nuvem lê e escreve as aprovações no MESMO
+# banco, então local e nuvem enxergam exatamente os mesmos dados.
+databases:
+  - name: robo-sienge-db
+    plan: basic-256mb            # menor Postgres pago (~US$6/mês). Troque p/ "free" p/ testar.
+    databaseName: robo_sienge
+    user: robo
+
+services:
+  - type: web
+    name: robo-sienge-painel
+    runtime: python
+    plan: free                  # o painel pode ser grátis: os dados moram no Postgres,
+                                # não na instância. Hibernar só causa cold start (~30s).
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py dashboard
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: robo-sienge-db
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      # --- Segredos: preencher no painel do Render (Environment). NUNCA versionar. ---
+      - key: DASHBOARD_USER
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      # SIENGE/GEMINI só são necessários se um dia o ciclo rodar na nuvem;
+      # como o ciclo fica local, o painel na nuvem NÃO precisa deles.
