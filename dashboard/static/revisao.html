@@ -308,6 +308,12 @@ function montar() {
         const k = String(d.titulo_numero || "?");
         (map[k] = map[k] || { numero:k, divs:[] }).divs.push(d);
     });
+    // inclui TODOS os títulos do ciclo (a tabela de pagamentos tem inclusive os
+    // que ficaram OK, sem nenhum apontamento) para poder listar e pesquisar tudo
+    PAGS.forEach(p => {
+        const k = String(p.titulo_numero || "?");
+        if (!map[k]) map[k] = { numero:k, divs:[] };
+    });
     TITULOS = Object.values(map).map(t => {
         t.pag = PAGS.find(p => String(p.titulo_numero) === t.numero) || null;
         const d0 = t.divs[0] || {};
@@ -339,25 +345,35 @@ function problemasUnicos(t) {
     return unicos;
 }
 
-/* ============ filtros ============ */
+/* ============ filtros (por TÍTULO) ============ */
 const FILTROS = [
     ["PENDENTES", "Pendentes"], ["CRITICAS", "Críticas"], ["ATENCAO", "Atenção"],
-    ["DECIDIDOS", "Decididos"], ["TODOS", "Todos"],
+    ["OK", "Liberados"], ["DECIDIDOS", "Decididos"], ["TODOS", "Todos"],
 ];
-function passaFiltroDiv(d) {
-    const st = d.status_revisao;
+// Um título aparece no filtro atual?
+function tituloNoFiltro(t) {
     switch (FILTRO) {
-        case "PENDENTES": return st === "PENDENTE";
-        case "CRITICAS": return st === "PENDENTE" && d.criticidade === "CRITICA";
-        case "ATENCAO": return st === "PENDENTE" && d.criticidade === "ATENCAO";
-        case "DECIDIDOS": return st !== "PENDENTE";
-        default: return true;
+        case "PENDENTES": return t.pendentes > 0;
+        case "CRITICAS":  return t.critPend > 0;
+        case "ATENCAO":   return (t.pendentes - t.critPend) > 0;
+        case "OK":        return t.divs.length === 0;
+        case "DECIDIDOS": return t.divs.length > 0 && t.pendentes === 0;
+        default:          return true;  // TODOS
+    }
+}
+// Quais apontamentos mostrar dentro de um título (respeitando o filtro)
+function divsDoTitulo(t) {
+    const probs = problemasUnicos(t);
+    switch (FILTRO) {
+        case "PENDENTES": return probs.filter(d => d.status_revisao === "PENDENTE");
+        case "CRITICAS":  return probs.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "CRITICA");
+        case "ATENCAO":   return probs.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "ATENCAO");
+        default:          return probs;  // OK / DECIDIDOS / TODOS → todos
     }
 }
 function contar(f) {
     const antigo = FILTRO; FILTRO = f;
-    let n = 0;
-    TITULOS.forEach(t => { n += problemasUnicos(t).filter(passaFiltroDiv).length; });
+    const n = TITULOS.filter(tituloNoFiltro).length;
     FILTRO = antigo;
     return n;
 }
@@ -383,21 +399,24 @@ function render() {
     let linhasVisiveis = 0;
 
     TITULOS.forEach(t => {
-        const probs = problemasUnicos(t).filter(d => {
-            if (!passaFiltroDiv(d)) return false;
-            if (busca) {
-                const alvo = (t.numero + " " + t.fornecedor + " " + (NOMES[d.tipo] || d.tipo)).toLowerCase();
-                if (!alvo.includes(busca)) return false;
-            }
-            return true;
-        });
-        if (!probs.length) return;
-        linhasVisiveis += probs.length;
+        // Com busca ativa, varre TODOS os títulos (ignora o filtro); sem busca,
+        // aplica o filtro selecionado.
+        if (busca) {
+            const alvo = (t.numero + " " + t.fornecedor + " " + (t.cnpj || "") + " " +
+                t.divs.map(d => NOMES[d.tipo] || d.tipo).join(" ")).toLowerCase();
+            if (!alvo.includes(busca)) return;
+        } else if (!tituloNoFiltro(t)) {
+            return;
+        }
+        const probs = busca ? problemasUnicos(t) : divsDoTitulo(t);
+        linhasVisiveis++;
 
         // ===== linha do título =====
         const tr = document.createElement("tr");
         tr.className = "grupo";
-        const estadoDireita = t.pendentes
+        const estadoDireita = t.divs.length === 0
+            ? `<span class="g-ok">✓ liberado</span>`
+            : t.pendentes
             ? `<button class="g-aprovar">✓ Aprovar título (${t.pendentes})</button>`
             : (t.rejeitados ? `<span class="g-ok" style="color:var(--muted)">✗ ${t.rejeitados} rejeitado(s)</span>`
                             : `<span class="g-ok">✓ revisado</span>`);
@@ -431,15 +450,18 @@ function render() {
 
     if (!linhasVisiveis) {
         const pend = DIVS.filter(d => d.status_revisao === "PENDENTE").length;
+        const filtroPendente = ["PENDENTES", "CRITICAS", "ATENCAO"].includes(FILTRO);
         vazio.style.display = "";
-        if (FILTRO !== "TODOS" && pend === 0 && DIVS.length) {
+        if (!busca && filtroPendente && pend === 0 && DIVS.length) {
             const apr = DIVS.filter(d => d.status_revisao === "APROVADO").length;
             const rej = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
             vazio.innerHTML = `<div class="emoji">🎉</div><h2>Tudo revisado!</h2>
                 <p>${apr} aprovado(s) · ${rej} rejeitado(s). A remessa está liberada.</p>
                 <div class="acoes">${rej ? '<button class="primario" onclick="exportarRejeitados()">⬇ Baixar rejeitados</button>' : ""}</div>`;
+        } else if (busca) {
+            vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nenhum título encontrado</h2><p>Nada bate com “${BUSCA}”.</p>`;
         } else {
-            vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nada aqui</h2><p>Nenhum apontamento com esse filtro/busca.</p>`;
+            vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nada aqui</h2><p>Nenhum título com esse filtro.</p>`;
         }
     } else vazio.style.display = "none";
 }
