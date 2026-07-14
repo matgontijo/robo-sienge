@@ -31,12 +31,20 @@ let eventSource = null;
 let allDivergencias = [];
 let userRole = null;
 
-window.onload = () => {
-    if (token) {
-        document.getElementById('login-container').style.display = 'none';
-        document.getElementById('app-container').style.display = 'flex';
-        initDashboard();
-    }
+function entrarNoApp() {
+    document.getElementById('login-container').style.display = 'none';
+    document.getElementById('app-container').style.display = 'flex';
+    initDashboard();
+}
+
+window.onload = async () => {
+    // Se a autenticação estiver desligada (uso local), o /api/stats responde 200
+    // sem credencial — entra direto, sem tela de login.
+    try {
+        const r = await fetch("/api/stats");
+        if (r.ok) return entrarNoApp();
+    } catch (e) { /* servidor fora do ar; cai na tela de login */ }
+    if (token) entrarNoApp();  // já tinha token salvo (auth ligada)
 };
 
 function login() {
@@ -78,10 +86,9 @@ function login() {
 }
 
 function getHeaders() {
-    return {
-        "Authorization": "Basic " + token,
-        "Content-Type": "application/json"
-    };
+    const h = { "Content-Type": "application/json" };
+    if (token) h["Authorization"] = "Basic " + token;  // omite quando não há login
+    return h;
 }
 
 async function initDashboard() {

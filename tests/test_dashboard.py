@@ -11,15 +11,24 @@ def get_auth_header():
     token = base64.b64encode(f"{config.DASHBOARD_USER}:{config.DASHBOARD_PASSWORD}".encode()).decode()
     return {"Authorization": f"Basic {token}"}
 
-def test_autenticacao_invalida():
-    # Rota que precisa de auth sem header
+def test_auth_desligada_entra_sem_login():
+    # Padrão local: DASHBOARD_AUTH desligado -> acessa sem credencial.
+    import config
+    assert config.DASHBOARD_AUTH is False
     response = client.get("/api/stats")
-    assert response.status_code == 401
+    assert response.status_code == 200
 
-    # Rota com auth incorreto
-    wrong_token = base64.b64encode(b"admin:senha_errada").decode()
-    response2 = client.get("/api/stats", headers={"Authorization": f"Basic {wrong_token}"})
-    assert response2.status_code == 401
+def test_auth_ligada_exige_credencial(monkeypatch):
+    # Cenário do painel público (Render): DASHBOARD_AUTH ligado -> exige login.
+    import config
+    monkeypatch.setattr(config, "DASHBOARD_AUTH", True)
+    # sem header
+    assert client.get("/api/stats").status_code == 401
+    # senha errada
+    wrong = base64.b64encode(b"admin:senha_errada").decode()
+    assert client.get("/api/stats", headers={"Authorization": f"Basic {wrong}"}).status_code == 401
+    # credencial correta
+    assert client.get("/api/stats", headers=get_auth_header()).status_code == 200
 
 def test_stats_retorna_estrutura_correta():
     response = client.get("/api/stats", headers=get_auth_header())

@@ -231,7 +231,8 @@ let FILTRO = "PENDENTES", BUSCA = "";
 const EXPANDIDOS = new Set();
 
 const $ = id => document.getElementById(id);
-const H = () => ({ "Authorization": "Basic " + TOK, "Content-Type": "application/json" });
+const H = () => TOK ? { "Authorization": "Basic " + TOK, "Content-Type": "application/json" }
+                    : { "Content-Type": "application/json" };
 const dinheiro = v => v == null ? "–" : Number(v).toLocaleString("pt-BR", { style:"currency", currency:"BRL" });
 const dig = v => String(v || "").replace(/\D/g, "");
 const numDe = s => { const m = String(s ?? "").match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; };
@@ -270,13 +271,17 @@ function colunas(d) {
 
 /* ============ carga ============ */
 async function init() {
-    if (!TOK) {
+    // Tenta sem login primeiro (auth pode estar desligada no uso local).
+    let r = await fetch("/api/execucoes?limit=15", { headers: H() });
+    if (r.status === 401) {
+        // Auth ligada (ex.: painel público): pede usuário/senha.
+        sessionStorage.removeItem("auth_token"); TOK = null;
         const u = prompt("Usuário do painel:"), p = u && prompt("Senha:");
         if (!u) return;
         TOK = btoa(u + ":" + p); sessionStorage.setItem("auth_token", TOK);
+        r = await fetch("/api/execucoes?limit=15", { headers: H() });
+        if (r.status === 401) { TOK = null; sessionStorage.removeItem("auth_token"); return; }
     }
-    const r = await fetch("/api/execucoes?limit=15", { headers: H() });
-    if (r.status === 401) { sessionStorage.removeItem("auth_token"); TOK = null; return init(); }
     const execs = (await r.json()).filter(e => e.status === "CONCLUIDO");
     const sel = $("sel-exec"); sel.innerHTML = "";
     execs.forEach(e => {

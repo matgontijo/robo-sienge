@@ -55,6 +55,9 @@ DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT") or os.getenv("PORT") or "8000")
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "admin")
 DASHBOARD_DB_PATH = os.getenv("DASHBOARD_DB_PATH", "./dashboard.db")
+# Exige login? Padrão DESLIGADO (uso local sem senha). Ligar (DASHBOARD_AUTH=1)
+# quando o painel ficar público, ex.: no Render — protege os dados financeiros.
+DASHBOARD_AUTH = os.getenv("DASHBOARD_AUTH", "").strip().lower() in ("1", "true", "sim", "yes", "on")
 # Banco compartilhado (Postgres no Render). Se vazio, usa o SQLite local acima.
 # Local e nuvem apontam para a MESMA DATABASE_URL para verem os mesmos dados.
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -119,7 +122,7 @@ def reload_config():
     global SEFAZ_CERT_PATH, SEFAZ_CERT_PASSWORD, SEFAZ_CNPJ, SEFAZ_AMBIENTE, SEFAZ_NSU_ULTIMO
     global SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, NOTIF_EMAIL_DESTINO, TEAMS_WEBHOOK_URL
     global CRON_HORA, CRON_MINUTO
-    global DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_USER, DASHBOARD_PASSWORD, DASHBOARD_DB_PATH
+    global DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_USER, DASHBOARD_PASSWORD, DASHBOARD_DB_PATH, DASHBOARD_AUTH, DATABASE_URL
     
     SIENGE_BASE_URL = os.getenv("SIENGE_BASE_URL")
     SIENGE_USERNAME = os.getenv("SIENGE_USERNAME")
@@ -156,4 +159,5 @@ def reload_config():
     DASHBOARD_USER = os.getenv("DASHBOARD_USER", "admin")
     DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "admin")
     DASHBOARD_DB_PATH = os.getenv("DASHBOARD_DB_PATH", "./dashboard.db")
+    DASHBOARD_AUTH = os.getenv("DASHBOARD_AUTH", "").strip().lower() in ("1", "true", "sim", "yes", "on")
     DATABASE_URL = os.getenv("DATABASE_URL")
