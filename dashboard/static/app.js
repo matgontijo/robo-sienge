@@ -341,7 +341,7 @@ async function selectExecucao(id) {
 
 function startSSE(id) {
     // Para SSE nativo que nao tem Header, passamos token via QS
-    eventSource = new EventSource(`/api/stream/${id}?token=${token}`);
+    eventSource = new EventSource(`/api/stream/${id}` + (token ? `?token=${token}` : ""));
     
     eventSource.onmessage = (e) => {
         const term = document.getElementById("terminal-logs");
@@ -428,11 +428,11 @@ document.getElementById("filtro-crit").addEventListener("change", renderDivergen
 document.getElementById("filtro-busca").addEventListener("input", renderDivergencias);
 
 function abrirDanfe(path) {
-    window.open(`/api/execucoes/${currentExecId}/danfe?path=${encodeURIComponent(path)}&token=${token}`, '_blank');
+    window.open(`/api/execucoes/${currentExecId}/danfe?path=${encodeURIComponent(path)}` + (token ? `&token=${token}` : ""), '_blank');
 }
 
 function baixarRelatorio() {
-    window.open(`/api/execucoes/${currentExecId}/relatorio?token=${token}`, '_blank');
+    window.open(`/api/execucoes/${currentExecId}/relatorio` + (token ? `?token=${token}` : ""), '_blank');
 }
 
 async function abrirPastaAnexos() {

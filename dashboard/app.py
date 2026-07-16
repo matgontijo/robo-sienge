@@ -384,33 +384,39 @@ async def stream_logs(execucao_id: int, req: Request):
     # Valida Auth no cabeçalho ou cookie para o SSE (geralmente enviamos o header de auth)
     # A dependência Depends() falha no SSE nativo do navegador as vezes, por isso
     # o frontend tem que enviar no EventSource se possível ou usar cookies.
-    auth = req.headers.get("Authorization")
-    if not auth:
-        auth = req.query_params.get("token")
-        if auth:
-            auth = f"Basic {auth}"
-            
-    if not auth:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-        
-    import base64
-    try:
-        scheme, credentials = auth.split()
-        if scheme.lower() != 'basic':
-            raise Exception()
-        decoded = base64.b64decode(credentials).decode("ascii")
-        username, _, password = decoded.partition(":")
-        
-        db_session = db.SessionLocal()
+    # Com a autenticação desligada (uso local), o stream é aberto direto.
+    if config.DASHBOARD_AUTH:
+        auth = req.headers.get("Authorization")
+        if not auth:
+            auth = req.query_params.get("token")
+            if auth and auth not in ("null", "undefined"):
+                auth = f"Basic {auth}"
+            else:
+                auth = None
+
+        if not auth:
+            raise HTTPException(status_code=401, detail="Login necessário")
+
+        import base64
         try:
-            user = db_session.query(db.Usuario).filter(db.Usuario.username == username).first()
-            if not user or not db.pwd_context.verify(password, user.password_hash):
+            scheme, credentials = auth.split()
+            if scheme.lower() != 'basic':
                 raise Exception()
-        finally:
-            db_session.close()
-            
-    except Exception:
-        raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Basic"})
+            decoded = base64.b64decode(credentials).decode("ascii")
+            username, _, password = decoded.partition(":")
+
+            db_session = db.SessionLocal()
+            try:
+                user = db_session.query(db.Usuario).filter(db.Usuario.username == username).first()
+                if not user or not db.pwd_context.verify(password, user.password_hash):
+                    raise Exception()
+            finally:
+                db_session.close()
+
+        except Exception:
+            # NUNCA envia WWW-Authenticate: é isso que dispara o pop-up nativo
+            # de login do navegador por cima do painel.
+            raise HTTPException(status_code=401, detail="Login inválido")
 
     async def event_generator():
         last_id = 0
