@@ -7,286 +7,153 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css?v=18">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/style.css?v=19">
 </head>
 <body>
-    <!-- ==================== APP ==================== -->
-    <div class="app" id="app-container">
 
-        <aside class="side">
-            <div class="brand">
-                <div class="mark">🛡️</div>
-                <div>
-                    <b>Robô de Conferência</b>
-                    <span>Grupo Garden</span>
-                </div>
-            </div>
-            <nav>
-                <button class="tab-btn active" id="nav-dashboard" onclick="switchMainTab('dashboard')">
-                    <span class="ico">📊</span> Visão geral</button>
-                <button class="tab-btn" id="nav-conferencia" onclick="switchMainTab('conferencia')">
-                    <span class="ico">✅</span> Conferência
-                    <span class="nav-badge" id="nav-conf-badge" style="display:none">0</span></button>
-                <button class="tab-btn" id="nav-presentation" onclick="switchMainTab('presentation')">
-                    <span class="ico">📽️</span> Apresentação</button>
-                <button class="tab-btn" id="nav-settings" onclick="switchMainTab('settings')">
-                    <span class="ico">⚙️</span> Configurações</button>
-            </nav>
-            <div class="header-actions">
-                <input type="file" id="file-relatorio" accept=".xlsx,.xlsm,.pdf" style="display:none" onchange="rodarComRelatorio(this)">
-                <button class="btn-primary" id="btn-relatorio" onclick="document.getElementById('file-relatorio').click()">📄 Rodar com Relatório</button>
-                <button class="btn-secondary" onclick="rodarAgora()">▶ Rodar por período</button>
-            </div>
-
-            <div class="side-foot">
-                Integração oficial <b>API Sienge</b> (somente leitura)<br>
-                usuário <b>garden-titulos</b>
-            </div>
-        </aside>
-
-        <div class="main">
-            <header class="header">
-                <div>
-                    <h1 id="view-title">Visão geral</h1>
-                    <div class="sub" id="view-sub">Acompanhe os ciclos de conferência antes da remessa de pagamento.</div>
-                </div>
-            </header>
-
-            <div class="content">
-
-                <!-- ========== VISÃO GERAL ========== -->
-                <div id="view-dashboard">
-
-                    <!-- Cockpit da remessa: a resposta de "posso pagar?" -->
-                    <div class="hero-remessa" id="hero-remessa" style="display:none">
-                        <div class="hr-main">
-                            <div class="hr-eyebrow">Remessa da semana · <span id="hr-ciclo">–</span></div>
-                            <div class="hr-status" id="hr-status">–</div>
-                            <div class="hr-sub" id="hr-sub">–</div>
-                            <div class="hr-bar"><div id="hr-bar-fill"></div></div>
-                            <div class="hr-meta" id="hr-meta">–</div>
-                        </div>
-                        <div class="hr-kpis">
-                            <div class="hr-kpi"><b id="hr-liberados">–</b><span>títulos liberados</span></div>
-                            <div class="hr-kpi crit"><b id="hr-criticas">–</b><span>críticas pendentes</span></div>
-                            <div class="hr-kpi"><b id="hr-valor-risco">–</b><span>valor sob crítica</span></div>
-                        </div>
-                        <div class="hr-cta">
-                            <button class="btn-hero" onclick="switchMainTab('conferencia')">Revisar agora →</button>
-                        </div>
-                    </div>
-
-                    <div class="cards-row">
-                        <div class="card" id="card-ultima">
-                            <div class="card-title">Última execução</div>
-                            <div class="card-value" id="val-ultima-status">–</div>
-                            <div class="card-sub" id="val-ultima-data">–</div>
-                        </div>
-                        <div class="card" id="card-titulos">
-                            <div class="card-title">Títulos hoje</div>
-                            <div class="card-value" id="val-titulos-hoje">0</div>
-                            <div class="card-sub">processados nos ciclos de hoje</div>
-                        </div>
-                        <div class="card" id="card-divergencias">
-                            <div class="card-title">Apontamentos hoje</div>
-                            <div class="card-value" id="val-diverg-hoje">0</div>
-                            <div class="card-sub" id="val-taxa-diverg">0% taxa</div>
-                        </div>
-                        <div class="card" id="card-criticos">
-                            <div class="card-title">Críticos hoje</div>
-                            <div class="card-value text-danger" id="val-criticos-hoje">0</div>
-                            <div class="card-sub">não pagar antes de revisar</div>
-                        </div>
-                    </div>
-
-                    <div class="chart-container">
-                        <canvas id="grafico-7dias"></canvas>
-                    </div>
-
-                    <div class="table-container">
-                        <h3>Histórico de execuções</h3>
-                        <div class="table-responsive">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Início</th>
-                                        <th>Fim</th>
-                                        <th>Títulos</th>
-                                        <th>Apontamentos</th>
-                                        <th>Críticos</th>
-                                        <th>Origem</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbody-historico"></tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="table-container" id="detalhes-container" style="display:none">
-                        <h3>Detalhes da execução <span id="detalhes-id"></span></h3>
-
-                        <div class="tabs">
-                            <div class="tab active" onclick="switchTab('divergencias')">Apontamentos</div>
-                            <div class="tab" onclick="switchTab('logs')">Logs da execução</div>
-                            <div class="tab" id="tab-relatorio" style="display:none;" onclick="baixarRelatorio()">📥 Baixar Excel</div>
-                            <div class="tab" id="tab-pasta" style="display:none;" onclick="abrirPastaAnexos()">📁 Abrir pasta dos anexos</div>
-                            <div class="tab" id="tab-abortar" style="display:none; color: var(--critica)" onclick="abortarExecucao()">🛑 Abortar</div>
-                        </div>
-
-                        <div id="tab-divergencias" class="tab-content active">
-                            <div class="filters">
-                                <select id="filtro-crit">
-                                    <option value="Todas">Todas as criticidades</option>
-                                    <option value="CRITICA">Apenas críticas</option>
-                                    <option value="ATENCAO">Apenas atenção</option>
-                                </select>
-                                <input type="text" id="filtro-busca" placeholder="Buscar título ou fornecedor...">
-                            </div>
-
-                            <div class="table-responsive">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Título</th>
-                                            <th>Fornecedor</th>
-                                            <th>Problema</th>
-                                            <th>Campo</th>
-                                            <th>Sienge diz</th>
-                                            <th>Verificado</th>
-                                            <th>Criticidade</th>
-                                            <th>Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbody-divergencias"></tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div id="tab-logs" class="tab-content">
-                            <div class="terminal" id="terminal-logs"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ========== CONFERÊNCIA (revisão/aprovação) ========== -->
-                <div id="view-conferencia" style="display:none">
-                    <iframe class="embed-frame" id="frame-conferencia" title="Conferência de pagamentos"></iframe>
-                </div>
-
-                <!-- ========== APRESENTAÇÃO ========== -->
-                <div id="view-presentation" style="display:none">
-                    <iframe class="embed-frame" src="/static/relatorio_conciliacao.html?v=6" title="Apresentação executiva"></iframe>
-                </div>
-
-                <!-- ========== CONFIGURAÇÕES ========== -->
-                <div id="view-settings" style="display:none">
-                    <div class="settings-grid">
-
-                        <div class="settings-card">
-                            <div class="settings-header">ERP Sienge</div>
-                            <div class="settings-desc">Credenciais da API do Sienge para buscar títulos, anexos, credores e impostos.</div>
-                            <div class="input-group">
-                                <label>Base URL</label>
-                                <input type="text" id="cfg_SIENGE_BASE_URL" placeholder="https://api.sienge.com.br...">
-                            </div>
-                            <div class="input-group">
-                                <label>Usuário Sienge</label>
-                                <input type="text" id="cfg_SIENGE_USERNAME">
-                            </div>
-                            <div class="input-group">
-                                <label>Senha / Token</label>
-                                <input type="password" id="cfg_SIENGE_PASSWORD">
-                            </div>
-                        </div>
-
-                        <div class="settings-card">
-                            <div class="settings-header">Banco Santander · DDA</div>
-                            <div class="settings-desc">Consulta de boletos registrados para bater CNPJ, valor e vencimento antes de pagar. Aguardando aprovação para produção.</div>
-                            <div class="input-group">
-                                <label>Client ID</label>
-                                <input type="text" id="cfg_SANTANDER_CLIENT_ID">
-                            </div>
-                            <div class="input-group">
-                                <label>Client Secret</label>
-                                <input type="password" id="cfg_SANTANDER_CLIENT_SECRET">
-                            </div>
-                            <div class="input-group">
-                                <label>Certificado (caminho)</label>
-                                <input type="text" id="cfg_SANTANDER_CERT_PATH">
-                            </div>
-                            <div class="input-group">
-                                <label>Senha do certificado</label>
-                                <input type="password" id="cfg_SANTANDER_CERT_PASSWORD">
-                            </div>
-                            <div class="input-group">
-                                <label>Ambiente</label>
-                                <select id="cfg_SANTANDER_ENV">
-                                    <option value="sandbox">Sandbox</option>
-                                    <option value="production">Produção</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="settings-card">
-                            <div class="settings-header">OCR dos anexos (IA)</div>
-                            <div class="settings-desc">A camada de texto dos PDFs é lida de graça. O OCR de IA entra só nos documentos escaneados (~7%). Preencha uma das chaves.</div>
-                            <div class="input-group">
-                                <label>Anthropic API Key (opcional)</label>
-                                <input type="password" id="cfg_ANTHROPIC_API_KEY">
-                            </div>
-                        </div>
-
-                        <div class="settings-card">
-                            <div class="settings-header">Consulta Sefaz</div>
-                            <div class="settings-desc">Baixa o XML oficial da NF-e na Sefaz usando o certificado digital A1 (opcional).</div>
-                            <div class="input-group">
-                                <label>CNPJ da empresa</label>
-                                <input type="text" id="cfg_SEFAZ_CNPJ">
-                            </div>
-                            <div class="input-group">
-                                <label>Caminho do PFX</label>
-                                <input type="text" id="cfg_SEFAZ_CERT_PATH">
-                            </div>
-                            <div class="input-group">
-                                <label>Senha do PFX</label>
-                                <input type="password" id="cfg_SEFAZ_CERT_PASSWORD">
-                            </div>
-                        </div>
-
-                        <div class="settings-card">
-                            <div class="settings-header">Notificações por e-mail</div>
-                            <div class="settings-desc">Com o SMTP preenchido, o robô envia sozinho o resumo de cada ciclo com o Excel anexado.</div>
-                            <div class="input-group">
-                                <label>Destinatários (separados por vírgula)</label>
-                                <input type="text" id="cfg_NOTIF_EMAIL_DESTINO">
-                            </div>
-                            <div class="input-group">
-                                <label>SMTP Host</label>
-                                <input type="text" id="cfg_SMTP_HOST">
-                            </div>
-                            <div class="input-group">
-                                <label>SMTP User</label>
-                                <input type="text" id="cfg_SMTP_USER">
-                            </div>
-                            <div class="input-group">
-                                <label>SMTP Password</label>
-                                <input type="password" id="cfg_SMTP_PASSWORD">
-                            </div>
-                        </div>
-
-                    </div>
-                    <div style="margin-top: 18px; text-align: right;">
-                        <button class="btn-primary" onclick="saveConfig()">💾 Salvar configurações</button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
+<!-- ==================== BARRA ÚNICA ==================== -->
+<header class="bar">
+    <div class="logo"><span class="mark">🛡️</span>
+        <span class="logo-t"><b>Robô de Conferência</b><small>Grupo Garden</small></span>
     </div>
 
-    <script src="/static/app.js?v=18"></script>
+    <select id="sel-exec" title="Ciclo"></select>
+    <span id="chip-estado" class="chip-estado"></span>
+
+    <input id="busca" placeholder="🔍  Título, fornecedor, CNPJ ou problema…">
+
+    <div class="bar-acoes">
+        <button class="bt-ico" id="bt-hist" title="Histórico de ciclos">🕘</button>
+        <button class="bt-ico" id="bt-apres" title="Apresentação executiva">📽️</button>
+        <button class="bt-ico" id="bt-config" title="Configurações">⚙️</button>
+        <input type="file" id="file-relatorio" accept=".xlsx,.xlsm,.pdf" hidden>
+        <button class="bt-enviar" id="bt-enviar">⬆ Enviar relatório</button>
+    </div>
+</header>
+
+<!-- ==================== PALCO (muda de estado) ==================== -->
+<main id="palco">
+
+    <!-- ESTADO 1: nenhum ciclo — só o convite para começar -->
+    <section id="stage-vazio" hidden>
+        <div class="dropzone" id="dropzone">
+            <div class="dz-ico">📄</div>
+            <h1>Arraste o relatório do Fluxo de Caixa aqui</h1>
+            <p>ou <b>clique para escolher o arquivo</b> (.xlsx) — o robô confere cada título antes da remessa.</p>
+        </div>
+    </section>
+
+    <!-- ESTADO 2: robô trabalhando — progresso vivo -->
+    <section id="stage-rodando" hidden>
+        <div class="run-card">
+            <div class="run-orbita"><div class="run-nucleo">🤖</div></div>
+            <h1 id="run-titulo">Conferindo os títulos…</h1>
+            <p id="run-sub">Sienge · anexos · boletos · impostos · destinos de pagamento</p>
+            <div class="run-bar"><div id="run-fill"></div></div>
+            <div class="run-meta"><span id="run-pct">—</span><span id="run-eta"></span></div>
+            <div class="run-ticker" id="run-ticker"></div>
+            <button class="bt-fantasma" id="bt-abortar">Parar o ciclo</button>
+        </div>
+    </section>
+
+    <!-- ESTADO 3: a mesa de decisão (o coração do app) -->
+    <section id="stage-revisao" hidden>
+
+        <!-- faixa de veredito + resumo -->
+        <div class="veredito" id="veredito">
+            <div class="v-txt">
+                <div class="v-status" id="v-status">—</div>
+                <div class="v-sub" id="v-sub"></div>
+            </div>
+            <div class="v-stats">
+                <div class="v-stat crit"><b id="res-crit">–</b><span>críticas</span></div>
+                <div class="v-stat warn"><b id="res-warn">–</b><span>atenção</span></div>
+                <div class="v-stat ok"><b id="res-ok">–</b><span>liberados</span></div>
+                <div class="v-prog"><svg viewBox="0 0 44 44"><circle class="pr-t" cx="22" cy="22" r="19"/><circle class="pr-f" id="pr-f" cx="22" cy="22" r="19"/></svg><b id="pr-pct">0%</b></div>
+            </div>
+            <div class="v-acoes" id="v-acoes">
+                <button class="bt-fantasma" id="bt-pasta">📁 Anexos</button>
+                <button class="bt-fantasma" id="bt-excel">⬇ Excel</button>
+                <button class="bt-fantasma" id="bt-rejeitados" hidden>⬇ Rejeitados</button>
+            </div>
+        </div>
+
+        <!-- filtros -->
+        <div class="filtros-row">
+            <div class="filtros" id="filtros"></div>
+        </div>
+
+        <!-- a mesa -->
+        <div id="scroll">
+            <table class="mesa">
+                <thead><tr>
+                    <th style="width:34%">Problema</th>
+                    <th style="width:15%">No Sienge</th>
+                    <th style="width:15%">No documento</th>
+                    <th style="width:14%">Diferença</th>
+                    <th class="c" style="width:12%">Sua decisão</th>
+                </tr></thead>
+                <tbody id="corpo"></tbody>
+            </table>
+            <div id="estado-vazio" class="fim" hidden></div>
+        </div>
+    </section>
+</main>
+
+<!-- ==================== GAVETA: HISTÓRICO ==================== -->
+<div class="veu" id="veu"></div>
+<aside class="drawer" id="drawer-hist">
+    <div class="dr-head"><h2>🕘 Histórico de ciclos</h2><button class="dr-x" data-fecha>×</button></div>
+    <div class="dr-body">
+        <div id="hist-lista"></div>
+        <h3 class="dr-sec">Diário do ciclo selecionado</h3>
+        <div class="terminal" id="hist-term"></div>
+    </div>
+</aside>
+
+<!-- ==================== GAVETA: CONFIGURAÇÕES ==================== -->
+<aside class="drawer" id="drawer-config">
+    <div class="dr-head"><h2>⚙️ Configurações</h2><button class="dr-x" data-fecha>×</button></div>
+    <div class="dr-body">
+        <div class="cfg-card">
+            <h3>ERP Sienge</h3><p>Credenciais da API para títulos, anexos, credores e impostos.</p>
+            <label>Base URL</label><input type="text" id="cfg_SIENGE_BASE_URL" placeholder="https://api.sienge.com.br…">
+            <label>Usuário</label><input type="text" id="cfg_SIENGE_USERNAME">
+            <label>Senha / Token</label><input type="password" id="cfg_SIENGE_PASSWORD">
+        </div>
+        <div class="cfg-card">
+            <h3>Santander · DDA</h3><p>Boletos registrados para bater CNPJ, valor e vencimento. Aguardando aprovação.</p>
+            <label>Client ID</label><input type="text" id="cfg_SANTANDER_CLIENT_ID">
+            <label>Client Secret</label><input type="password" id="cfg_SANTANDER_CLIENT_SECRET">
+            <label>Certificado (caminho)</label><input type="text" id="cfg_SANTANDER_CERT_PATH">
+            <label>Senha do certificado</label><input type="password" id="cfg_SANTANDER_CERT_PASSWORD">
+            <label>Ambiente</label>
+            <select id="cfg_SANTANDER_ENV"><option value="sandbox">Sandbox</option><option value="production">Produção</option></select>
+        </div>
+        <div class="cfg-card">
+            <h3>OCR dos anexos (IA)</h3><p>A camada de texto dos PDFs é lida de graça; a IA entra só nos escaneados (~7%).</p>
+            <label>Anthropic API Key (opcional)</label><input type="password" id="cfg_ANTHROPIC_API_KEY">
+        </div>
+        <div class="cfg-card">
+            <h3>Consulta Sefaz</h3><p>XML oficial da NF-e com certificado A1 (opcional).</p>
+            <label>CNPJ da empresa</label><input type="text" id="cfg_SEFAZ_CNPJ">
+            <label>Caminho do PFX</label><input type="text" id="cfg_SEFAZ_CERT_PATH">
+            <label>Senha do PFX</label><input type="password" id="cfg_SEFAZ_CERT_PASSWORD">
+        </div>
+        <div class="cfg-card">
+            <h3>Notificações por e-mail</h3><p>Com SMTP preenchido, o resumo de cada ciclo sai sozinho com o Excel anexo.</p>
+            <label>Destinatários (vírgula)</label><input type="text" id="cfg_NOTIF_EMAIL_DESTINO">
+            <label>SMTP Host</label><input type="text" id="cfg_SMTP_HOST">
+            <label>SMTP User</label><input type="text" id="cfg_SMTP_USER">
+            <label>SMTP Password</label><input type="password" id="cfg_SMTP_PASSWORD">
+        </div>
+        <button class="bt-salvar" id="bt-salvar-cfg">💾 Salvar configurações</button>
+    </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+<div class="drop-veu" id="drop-veu"><div>Solte o relatório para começar 📄</div></div>
+
+<script src="/static/app.js?v=19"></script>
 </body>
 </html>

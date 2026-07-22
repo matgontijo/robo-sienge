@@ -1,548 +1,641 @@
-sessionStorage.removeItem("auth_token"); // limpa token de versões antigas do painel
+"use strict";
+/* ============================================================
+   Robô de Conferência — experiência v3 (uma tela, três estados)
+   enviar relatório → conferindo (ao vivo) → mesa de decisão
+   ============================================================ */
 
-const NOMES_TIPO = {
-    "PAGAMENTO_DESTINO_DIVERGENTE": "Destino do pagamento ≠ CNPJ do credor",
-    "CNPJ_DIVERGENTE": "CNPJ da nota ≠ credor do título",
+/* ---------- vocabulário ---------- */
+const NOMES = {
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Dinheiro vai para outro CNPJ (não é o credor)",
+    "CNPJ_DIVERGENTE": "Nota emitida por CNPJ diferente do credor",
     "VALOR_DIVERGENTE": "Valor do título ≠ valor da nota",
-    "LIQUIDO_BRUTO_DIVERGENTE": "Líquido ≠ bruto − retenções (via NF)",
-    "LIQUIDO_PARCELA_DIVERGENTE": "Parcela − retenções ≠ valor a pagar",
-    "BOLETO_VALOR_DIVERGENTE": "Valor do boleto ≠ valor a pagar",
-    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto × forma (próprio/outros)",
-    "BOLETO_VENCIMENTO_DIVERGENTE": "Vencimento do boleto ≠ título",
-    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito mesmo banco",
+    "LIQUIDO_BRUTO_DIVERGENTE": "Líquido não bate com bruto − retenções",
+    "LIQUIDO_PARCELA_DIVERGENTE": "Parcela − retenções não bate com o valor a pagar",
+    "BOLETO_VALOR_DIVERGENTE": "Boleto cobra valor diferente do título",
+    "BOLETO_BANCO_INCOMPATIVEL": "Banco do boleto ≠ forma de pagamento",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Boleto vence em data diferente do título",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "TED × depósito: forma errada p/ banco destino",
     "IMPOSTO_DIVERGENTE": "Imposto retido ≠ destacado na nota",
+    "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
+    "IMPOSTO_NAO_RETIDO": "Nota destaca retenção não lançada no título",
+    "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
+    "RETENCAO_INDEVIDA_SIMPLES": "Retenção federal de fornecedor do Simples",
     "CHAVE_NFE_INVALIDA": "Chave de NF-e inválida",
     "BOLETO_NAO_ENCONTRADO": "Boleto não encontrado no DDA",
-    "SEM_ANEXO": "Título sem anexo no Sienge",
-    "ANEXO_ILEGIVEL": "Anexo não lido (OCR pendente)",
-    "PIX_NAO_VERIFICAVEL": "Chave Pix não verificável",
+    "SEM_ANEXO": "Título sem nenhum documento anexado",
+    "ANEXO_ILEGIVEL": "Documento não lido (OCR pendente)",
+    "PIX_NAO_VERIFICAVEL": "Chave Pix não permite confirmar o titular",
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
     "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor não aparece na NF anexada",
-    "IMPOSTO_NF_DIVERGENTE": "Retenção do título ≠ destacada na nota",
-    "IMPOSTO_NAO_RETIDO": "Nota destaca retenção que o título não lançou",
-    "RETENCAO_ALIQUOTA_SUSPEITA": "Alíquota de retenção acima do usual",
-    "RETENCAO_INDEVIDA_SIMPLES": "Retenção federal de fornecedor do Simples",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
-let chartInstance = null;
-let currentExecId = null;
-let eventSource = null;
-let allDivergencias = [];
-let userRole = "ADMIN"; // painel sem login: acesso local com todos os recursos
-
-window.onload = () => initDashboard();
-
-function getHeaders() {
-    return { "Content-Type": "application/json" };
-}
-
-async function initDashboard() {
-    await fetchStats();
-    await fetchHistorico();
-    atualizarBadgeConferencia();
-
-    // O trabalho do dia a dia é aprovar: abre direto na Conferência
-    switchMainTab('conferencia');
-
-    // Auto refresh status se a ultima tiver rodando
-    setInterval(() => {
-        const row = document.querySelector("#tbody-historico tr:first-child .badge.RODANDO");
-        if(row || (currentExecId && eventSource)) {
-            fetchStats();
-            fetchHistorico(false); // atualiza sem recriar
-        }
-    }, 5000);
-    setInterval(atualizarBadgeConferencia, 30000);
-}
-
-// Badge no menu + cockpit da remessa: estado da revisão do último ciclo concluído
-const moedaBR = v => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-
-async function atualizarBadgeConferencia() {
-    try {
-        const r = await fetch("/api/execucoes?limit=10", { headers: getHeaders() });
-        if (!r.ok) return;
-        const done = (await r.json()).filter(e => e.status === "CONCLUIDO");
-        if (!done.length) return;
-        const exec = done[0];
-        const divs = await (await fetch(`/api/execucoes/${exec.id}/divergencias`, { headers: getHeaders() })).json();
-
-        const pendentes = divs.filter(d => (d.status_revisao || "PENDENTE") === "PENDENTE");
-        const pendCrit = pendentes.filter(d => d.criticidade === "CRITICA");
-        const revisadas = divs.length - pendentes.length;
-
-        // badge do menu
-        const badge = document.getElementById("nav-conf-badge");
-        if (badge) {
-            badge.style.display = pendCrit.length > 0 ? "" : "none";
-            badge.textContent = pendCrit.length;
-        }
-
-        // cockpit da remessa
-        const hero = document.getElementById("hero-remessa");
-        if (!hero) return;
-        hero.style.display = "";
-        document.getElementById("hr-ciclo").innerText =
-            "ciclo #" + exec.id + " · " + new Date(exec.iniciado_em).toLocaleDateString("pt-BR");
-
-        // títulos distintos com crítica pendente e valor sob crítica
-        const titulosCrit = new Map();
-        pendCrit.forEach(d => { if (!titulosCrit.has(d.titulo_numero)) titulosCrit.set(d.titulo_numero, d.valor_sienge || 0); });
-        const valorRisco = [...titulosCrit.values()].reduce((a, b) => a + b, 0);
-        const titulosComPend = new Set(pendentes.map(d => d.titulo_numero)).size;
-        const liberados = (exec.total_titulos || 0) - titulosComPend;
-
-        const st = document.getElementById("hr-status");
-        const sub = document.getElementById("hr-sub");
-        if (pendCrit.length > 0) {
-            st.className = "hr-status crit";
-            st.innerText = "Remessa bloqueada";
-            sub.innerText = pendCrit.length + " apontamento(s) crítico(s) aguardam sua decisão antes do pagamento.";
-        } else if (pendentes.length > 0) {
-            st.className = "hr-status warn";
-            st.innerText = "Quase lá";
-            sub.innerText = "Sem críticas pendentes — restam " + pendentes.length + " ponto(s) de atenção para revisar.";
-        } else {
-            st.className = "hr-status ok";
-            st.innerText = "Remessa liberada ✓";
-            sub.innerText = "Todos os apontamentos do ciclo foram revisados. Pode montar a remessa.";
-        }
-
-        const pct = divs.length ? Math.round(100 * revisadas / divs.length) : 100;
-        document.getElementById("hr-bar-fill").style.width = pct + "%";
-        document.getElementById("hr-meta").innerText =
-            revisadas + " de " + divs.length + " apontamentos revisados (" + pct + "%)";
-        document.getElementById("hr-liberados").innerText = liberados + "/" + (exec.total_titulos || 0);
-        document.getElementById("hr-criticas").innerText = pendCrit.length;
-        document.getElementById("hr-valor-risco").innerText = moedaBR(valorRisco);
-    } catch (e) { /* silencioso */ }
-}
-
-async function fetchStats() {
-    const r = await fetch("/api/stats", { headers: getHeaders() });
-    if (!r.ok) return;
-    const stats = await r.json();
-    
-    if (stats.ultima_execucao) {
-        document.getElementById("val-ultima-status").innerText = stats.ultima_execucao.status;
-        document.getElementById("val-ultima-data").innerText = new Date(stats.ultima_execucao.iniciado_em).toLocaleString();
-        
-        const card = document.getElementById("card-ultima");
-        card.className = "card status-" + stats.ultima_execucao.status;
-    }
-    
-    // Calcula totais do grafico do dia de hoje (ultima barra)
-    if (stats.grafico_7dias && stats.grafico_7dias.length > 0) {
-        const hoje = stats.grafico_7dias[stats.grafico_7dias.length - 1];
-        document.getElementById("val-titulos-hoje").innerText = hoje.total;
-        document.getElementById("val-diverg-hoje").innerText = hoje.divergencias;
-        document.getElementById("val-criticos-hoje").innerText = hoje.criticos;
-    }
-    
-    document.getElementById("val-taxa-diverg").innerText = stats.taxa_divergencia_hoje.toFixed(1) + "% taxa";
-    
-    renderChart(stats.grafico_7dias);
-}
-
-function renderChart(dados) {
-    const ctx = document.getElementById('grafico-7dias').getContext('2d');
-    
-    const labels = dados.map(d => d.data.substring(5)); // mostra MM-DD
-    const dsTitulos = dados.map(d => d.total);
-    const dsDiverg = dados.map(d => d.divergencias);
-    
-    if (chartInstance) {
-        chartInstance.data.labels = labels;
-        chartInstance.data.datasets[0].data = dsTitulos;
-        chartInstance.data.datasets[1].data = dsDiverg;
-        chartInstance.update();
-        return;
-    }
-    
-    // tema escuro do gráfico — combina com o design system v2
-    Chart.defaults.color = '#8A8F98';
-    Chart.defaults.font.family = '"Geist", system-ui, sans-serif';
-    chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Títulos processados',
-                    data: dsTitulos,
-                    backgroundColor: 'rgba(20, 184, 166, 0.45)',
-                    borderColor: 'rgb(45, 212, 191)',
-                    borderWidth: 1.5,
-                    borderRadius: 6
-                },
-                {
-                    label: 'Apontamentos',
-                    data: dsDiverg,
-                    backgroundColor: 'rgba(248, 113, 113, 0.35)',
-                    borderColor: 'rgb(248, 113, 113)',
-                    borderWidth: 1.5,
-                    borderRadius: 6
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, border: { display: false } },
-                x: { grid: { display: false }, border: { display: false } }
-            }
-        }
-    });
-}
-
-async function fetchHistorico(rebuild = true) {
-    const r = await fetch("/api/execucoes?limit=15", { headers: getHeaders() });
-    if(!r.ok) return;
-    const execs = await r.json();
-    
-    const tbody = document.getElementById("tbody-historico");
-    if(rebuild) tbody.innerHTML = "";
-    
-    let html = "";
-    execs.forEach(e => {
-        let fim = e.concluido_em ? new Date(e.concluido_em).toLocaleTimeString() : "-";
-        let cssSel = (e.id === currentExecId) ? "selected" : "";
-        html += `<tr class="${cssSel}" onclick="selectExecucao(${e.id})">
-            <td>#${e.id}</td>
-            <td>${new Date(e.iniciado_em).toLocaleString()}</td>
-            <td>${fim}</td>
-            <td>${e.total_titulos}</td>
-            <td>${e.total_divergencias}</td>
-            <td class="text-danger">${e.total_criticos}</td>
-            <td>${e.iniciado_por}</td>
-            <td><span class="badge ${e.status}">${e.status}</span></td>
-        </tr>`;
-    });
-    
-    if(rebuild || tbody.innerHTML !== html) {
-        tbody.innerHTML = html;
-    }
-}
-
-async function selectExecucao(id) {
-    currentExecId = id;
-    document.getElementById("detalhes-container").style.display = "block";
-    document.getElementById("detalhes-id").innerText = "#" + id;
-    
-    // Highlight table
-    document.querySelectorAll("#tbody-historico tr").forEach(tr => tr.classList.remove("selected"));
-    const rows = document.querySelectorAll("#tbody-historico tr");
-    for(let r of rows) {
-        if(r.cells[0].innerText === "#"+id) r.classList.add("selected");
-    }
-    
-    const r = await fetch(`/api/execucoes/${id}`, { headers: getHeaders() });
-    const data = await r.json();
-    
-    allDivergencias = data.divergencias;
-    renderDivergencias();
-    
-    // Tabs visibility
-    const concluido = data.execucao.status === "CONCLUIDO";
-    document.getElementById("tab-relatorio").style.display = concluido ? "block" : "none";
-    document.getElementById("tab-pasta").style.display = concluido ? "block" : "none";
-    document.getElementById("tab-abortar").style.display = (data.execucao.status === "RODANDO" && userRole !== "LEITURA") ? "block" : "none";
-    
-    // Load logs
-    const rL = await fetch(`/api/execucoes/${id}/logs`, { headers: getHeaders() });
-    const logs = await rL.json();
-    
-    const term = document.getElementById("terminal-logs");
-    term.innerHTML = "";
-    logs.forEach(l => appendLog(l));
-    term.scrollTop = term.scrollHeight;
-    
-    // Handle SSE if running
-    if(eventSource) {
-        eventSource.close();
-        eventSource = null;
-    }
-    
-    if(data.execucao.status === "RODANDO") {
-        startSSE(id);
-        switchTab("logs");
-    } else {
-        switchTab("divergencias");
-    }
-}
-
-function startSSE(id) {
-    eventSource = new EventSource(`/api/stream/${id}`);
-    
-    eventSource.onmessage = (e) => {
-        const term = document.getElementById("terminal-logs");
-        
-        let colorClass = "log-INFO";
-        if(e.data.includes("WARNING")) colorClass = "log-WARNING";
-        if(e.data.includes("ERROR")) colorClass = "log-ERROR";
-        if(e.data.includes("SUCCESS")) colorClass = "log-SUCCESS";
-        
-        const div = document.createElement("div");
-        div.className = colorClass;
-        div.innerText = e.data;
-        term.appendChild(div);
-        term.scrollTop = term.scrollHeight;
-    };
-    
-    eventSource.addEventListener("close", () => {
-        eventSource.close();
-        eventSource = null;
-        fetchStats();
-        fetchHistorico();
-        document.getElementById("tab-abortar").style.display = "none";
-        document.getElementById("tab-relatorio").style.display = "block";
-        document.getElementById("tab-pasta").style.display = "block";
-    });
-}
-
-function appendLog(l) {
-    const term = document.getElementById("terminal-logs");
-    let colorClass = "log-" + l.level;
-    let d = new Date(l.timestamp);
-    let timeStr = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
-    
-    const div = document.createElement("div");
-    div.className = colorClass;
-    div.innerText = `[${timeStr}] ${l.level.padEnd(8, ' ')} | ${l.modulo} - ${l.mensagem}`;
-    term.appendChild(div);
-}
-
-function switchTab(tabId) {
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
-    
-    event.currentTarget.classList.add("active");
-    document.getElementById("tab-" + tabId).classList.add("active");
-}
-
-function renderDivergencias() {
-    const crit = document.getElementById("filtro-crit").value;
-    const busca = document.getElementById("filtro-busca").value.toLowerCase();
-    
-    const tbody = document.getElementById("tbody-divergencias");
-    tbody.innerHTML = "";
-    
-    const filtradas = allDivergencias.filter(d => {
-        if(crit !== "Todas" && d.criticidade !== crit) return false;
-        if(busca) {
-            const num = (d.titulo_numero||"").toLowerCase();
-            const forne = (d.fornecedor_nome||"").toLowerCase();
-            if(!num.includes(busca) && !forne.includes(busca)) return false;
-        }
-        return true;
-    });
-    
-    filtradas.forEach(d => {
-        let badge = d.criticidade === "CRITICA" ? "badge-crit" : (d.criticidade==="ATENCAO"?"badge-aten":"badge-info");
-        
-        let link = d.danfe_path ? `<a href="#" onclick="abrirDanfe('${d.danfe_path}')">Ver PDF</a>` : "-";
-        
-        tbody.innerHTML += `<tr>
-            <td>${d.titulo_numero}</td>
-            <td>${d.fornecedor_nome}</td>
-            <td>${NOMES_TIPO[d.tipo] || d.tipo}</td>
-            <td>${d.campo}</td>
-            <td>${d.valor_sienge_campo || "-"}</td>
-            <td>${d.valor_nfe_campo || d.valor_boleto_campo || "-"}</td>
-            <td><span class="${badge}">${d.criticidade}</span></td>
-            <td>${link}</td>
-        </tr>`;
-    });
-}
-
-document.getElementById("filtro-crit").addEventListener("change", renderDivergencias);
-document.getElementById("filtro-busca").addEventListener("input", renderDivergencias);
-
-function abrirDanfe(path) {
-    window.open(`/api/execucoes/${currentExecId}/danfe?path=${encodeURIComponent(path)}`, '_blank');
-}
-
-function baixarRelatorio() {
-    window.open(`/api/execucoes/${currentExecId}/relatorio`, '_blank');
-}
-
-async function abrirPastaAnexos() {
-    try {
-        const r = await fetch(`/api/execucoes/${currentExecId}/abrir-pasta`, { headers: getHeaders() });
-        const d = await r.json();
-        if (d.aberto) return;                 // abriu o Explorer no PC — nada a fazer
-        if (!d.existe) { alert("A pasta de anexos deste ciclo ainda não foi criada."); return; }
-        // painel acessado de outro dispositivo (não é o PC do robô): mostra o caminho
-        prompt("Abra esta pasta no computador do robô:", d.pasta);
-    } catch (e) {
-        alert("Não foi possível abrir a pasta.");
-    }
-}
-
-async function abortarExecucao() {
-    if(!confirm("Tem certeza que deseja abortar a execução atual? O orquestrador vai parar após finalizar o título atual.")) return;
-    
-    await fetch(`/api/execucoes/${currentExecId}/abortar`, {
-        method: "POST",
-        headers: getHeaders()
-    });
-    alert("Sinal de aborto enviado.");
-}
-
-async function rodarAgora() {
-    let di = prompt("Data Início (YYYY-MM-DD)", new Date().toISOString().substring(0,10));
-    if(!di) return;
-    let df = prompt("Data Fim (YYYY-MM-DD)", di);
-    if(!df) return;
-    
-    const r = await fetch("/api/execucoes/iniciar", {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify({ data_inicio: di, data_fim: df })
-    });
-    
-    if(r.status === 409) {
-        alert("Já existe uma execução rodando.");
-        return;
-    }
-    
-    if(r.ok) {
-        const data = await r.json();
-        if(data.execucao_id > 0) {
-            await fetchStats();
-            await fetchHistorico();
-            selectExecucao(data.execucao_id);
-        } else {
-            setTimeout(async () => {
-                await fetchStats();
-                await fetchHistorico();
-            }, 1000);
-        }
-    }
-}
-
-async function rodarComRelatorio(input) {
-    const file = input.files && input.files[0];
-    if (!file) return;
-
-    // Janela DDA automática (hoje → +7 dias, calculada no servidor);
-    // os títulos vêm do relatório enviado — sem perguntas.
-    const fd = new FormData();
-    fd.append("arquivo", file);
-
-    const btn = document.getElementById("btn-relatorio");
-    const txtOriginal = btn.innerText;
-    btn.innerText = "Enviando " + file.name + "...";
-    btn.disabled = true;
-
-    try {
-        const r = await fetch("/api/execucoes/iniciar-relatorio", {
-            method: "POST", // sem headers: o browser põe o Content-Type com o boundary
-            body: fd
-        });
-
-        if (r.status === 409) { alert("Já existe uma execução rodando."); return; }
-        if (!r.ok) {
-            const e = await r.json().catch(() => ({}));
-            alert("Erro ao iniciar: " + (e.detail || r.status));
-            return;
-        }
-        const data = await r.json();
-        await fetchStats();
-        await fetchHistorico();
-        if (data.execucao_id > 0) selectExecucao(data.execucao_id);
-    } catch (e) {
-        alert("Erro de conexão: " + e);
-    } finally {
-        btn.innerText = txtOriginal;
-        btn.disabled = false;
-        input.value = ""; // permite reenviar o mesmo arquivo
-    }
-}
-
-// ==========================================
-// CONFIGURAÇÕES
-// ==========================================
-
-const VIEW_TITULOS = {
-    dashboard:    ["Visão geral", "Acompanhe os ciclos de conferência antes da remessa de pagamento."],
-    conferencia:  ["Conferência", "Aprove ou rejeite cada apontamento — ↑↓ navegam, A aprova o título."],
-    presentation: ["Apresentação", "Status do robô, pendências, custos e resultados — pronta para reunião."],
-    settings:     ["Configurações", "Credenciais das integrações. Alterações valem a partir do próximo ciclo."],
+const DICAS = {
+    "PAGAMENTO_DESTINO_DIVERGENTE": "Exigir cessão de crédito ou autorização do credor",
+    "BOLETO_VALOR_DIVERGENTE": "Pedir boleto correto ou ajustar o título",
+    "BOLETO_VENCIMENTO_DIVERGENTE": "Pagar após o vencimento do boleto gera juros",
+    "LIQUIDO_PARCELA_DIVERGENTE": "Revisar as retenções lançadas",
+    "TRANSFERENCIA_BANCO_INCOMPATIVEL": "Corrigir a forma no Sienge — a remessa seria recusada",
+    "BOLETO_BANCO_INCOMPATIVEL": "Corrigir a forma no Sienge — a remessa seria recusada",
+    "FORMA_PAGAMENTO_AUSENTE": "Sem forma cadastrada o título não entra na remessa",
+    "SEM_ANEXO": "Cobrar o documento de quem lançou",
+    "PIX_NAO_VERIFICAVEL": "Confirmar a chave com o fornecedor",
+    "IMPOSTO_NAO_RETIDO": "Risco de pagar a mais e ficar com o passivo fiscal",
+    "NF_SEM_CNPJ_DO_CREDOR": "Abrir o anexo e conferir se a nota é do fornecedor",
+    "RETENCAO_INDEVIDA_SIMPLES": "Optante do Simples não sofre retenção federal",
 };
 
-function switchMainTab(viewName) {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    const nav = document.getElementById('nav-' + viewName);
-    if (nav) nav.classList.add('active');
-    else if (typeof event !== "undefined" && event.currentTarget) event.currentTarget.classList.add('active');
+/* ---------- estado ---------- */
+let EXECS = [], EXEC = null, DIVS = [], PAGS = [], TITULOS = [];
+let FILTRO = "PENDENTES", BUSCA = "";
+const EXPANDIDOS = new Set();
+let es = null;            // EventSource do ciclo rodando
+let runTotal = 0, runFeitos = 0, runInicio = 0;
 
-    ['dashboard', 'conferencia', 'presentation', 'settings'].forEach(v => {
-        const el = document.getElementById('view-' + v);
-        if (el) el.style.display = viewName === v ? 'block' : 'none';
-    });
+/* ---------- utilitários ---------- */
+const $ = id => document.getElementById(id);
+const H = () => ({ "Content-Type": "application/json" });
+const dinheiro = v => v == null ? "–" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dig = v => String(v || "").replace(/\D/g, "");
+const numDe = s => { const m = String(s ?? "").match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+const dataDe = s => { const m = String(s ?? "").match(/\d{4}-\d{2}-\d{2}/); return m ? m[0] : null; };
+const dataBR = s => { const m = String(s ?? "").match(/(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : (s || ""); };
+const cnpjDe = s => { const d = dig(s); return d.length === 14 ? d : null; };
+const fmtCNPJ = d => d ? `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}` : "";
+function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("show");
+    clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2200); }
 
-    const [t, s] = VIEW_TITULOS[viewName] || ["", ""];
-    const vt = document.getElementById('view-title');
-    const vs = document.getElementById('view-sub');
-    if (vt) vt.innerText = t;
-    if (vs) vs.innerText = s;
+/* ---------- estados do palco ---------- */
+function mostrar(stage) {
+    ["stage-vazio", "stage-rodando", "stage-revisao"].forEach(s => { $(s).hidden = s !== stage; });
+}
 
-    // Conferência/Apresentação ocupam a tela toda (sem padding nem rolagem dupla)
-    const content = document.querySelector('.content');
-    if (content) content.classList.toggle('full-bleed',
-        viewName === 'conferencia' || viewName === 'presentation');
-
-    if (viewName === 'settings') fetchConfig();
-    if (viewName === 'conferencia') {
-        // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
-        const frame = document.getElementById('frame-conferencia');
-        if (frame && !frame.src) frame.src = '/static/revisao.html?v=18';
-        atualizarBadgeConferencia();
+/* ============================================================
+   BOOT
+   ============================================================ */
+async function boot() {
+    await recarregarExecs();
+    const rodando = EXECS.find(e => e.status === "RODANDO");
+    const done = EXECS.filter(e => e.status === "CONCLUIDO");
+    if (rodando) {
+        acompanharCiclo(rodando);
+    } else if (done.length) {
+        await carregarCiclo(done[0].id);
+    } else {
+        mostrar("stage-vazio");
     }
 }
 
+async function recarregarExecs() {
+    const r = await fetch("/api/execucoes?limit=15", { headers: H() });
+    EXECS = r.ok ? await r.json() : [];
+    const sel = $("sel-exec");
+    sel.innerHTML = "";
+    EXECS.filter(e => e.status === "CONCLUIDO" || e.status === "RODANDO").forEach(e => {
+        const o = document.createElement("option");
+        o.value = e.id;
+        o.textContent = `Ciclo #${e.id} · ${(e.iniciado_em || "").replace("T", " ").slice(0, 16)}`;
+        sel.appendChild(o);
+    });
+}
+
+$("sel-exec").onchange = e => {
+    const ex = EXECS.find(x => String(x.id) === e.target.value);
+    if (!ex) return;
+    if (ex.status === "RODANDO") acompanharCiclo(ex);
+    else carregarCiclo(ex.id);
+};
+
+function chipEstado(ex) {
+    const c = $("chip-estado");
+    if (!ex) { c.textContent = ""; c.className = "chip-estado"; return; }
+    c.className = "chip-estado " + ex.status;
+    c.textContent = ex.status === "RODANDO" ? "conferindo…"
+        : ex.status === "CONCLUIDO" ? `${ex.total_titulos} títulos` : ex.status.toLowerCase();
+}
+
+/* ============================================================
+   ESTADO: RODANDO — progresso ao vivo
+   ============================================================ */
+function acompanharCiclo(ex) {
+    EXEC = ex;
+    $("sel-exec").value = String(ex.id);
+    chipEstado(ex);
+    mostrar("stage-rodando");
+    runTotal = 0; runFeitos = 0; runInicio = Date.now();
+    $("run-titulo").textContent = "Conferindo os títulos…";
+    $("run-fill").style.width = "4%";
+    $("run-pct").textContent = "preparando…";
+    $("run-eta").textContent = "";
+    $("run-ticker").innerHTML = "";
+
+    if (es) { es.close(); es = null; }
+    es = new EventSource(`/api/stream/${ex.id}`);
+    es.onmessage = ev => {
+        const msg = ev.data || "";
+        // total de títulos ("Títulos conferíveis no relatório: 124" / "530 encontrados")
+        let m = msg.match(/confer[íi]veis[^:]*:\s*(\d+)/i) || msg.match(/(\d+)\s+t[íi]tulos? para conferir/i);
+        if (m) runTotal = parseInt(m[1]);
+        if (/Processando/i.test(msg)) {
+            runFeitos++;
+            const mt = msg.match(/Processando\s+(?:t[íi]tulo\s+)?([\w\/.-]+)/i);
+            $("run-titulo").textContent = mt ? `Conferindo o título ${mt[1]}…` : "Conferindo os títulos…";
+            atualizarRun();
+        }
+        const tk = $("run-ticker");
+        const d = document.createElement("div");
+        d.textContent = msg.replace(/^\[.*?\]\s*/, "").slice(0, 110);
+        tk.appendChild(d);
+        while (tk.children.length > 7) tk.removeChild(tk.firstChild);
+    };
+    es.addEventListener("close", async () => {
+        es.close(); es = null;
+        toast("Ciclo concluído ✓");
+        await recarregarExecs();
+        const done = EXECS.filter(e => e.status === "CONCLUIDO");
+        if (done.length) await carregarCiclo(done[0].id);
+        else mostrar("stage-vazio");
+    });
+    es.onerror = () => { /* reconexão automática do EventSource */ };
+}
+
+function atualizarRun() {
+    if (!runTotal) { $("run-pct").textContent = runFeitos + " conferidos"; return; }
+    const pct = Math.min(99, Math.round(100 * runFeitos / runTotal));
+    $("run-fill").style.width = Math.max(4, pct) + "%";
+    $("run-pct").textContent = `${runFeitos} de ${runTotal} títulos · ${pct}%`;
+    if (runFeitos >= 3) {
+        const porTitulo = (Date.now() - runInicio) / runFeitos;
+        const resta = Math.round((runTotal - runFeitos) * porTitulo / 60000);
+        $("run-eta").textContent = resta > 0 ? `~${resta} min restantes` : "quase lá…";
+    }
+}
+
+$("bt-abortar").onclick = async () => {
+    if (!EXEC || !confirm("Parar o ciclo atual? Ele encerra após o título em andamento.")) return;
+    await fetch(`/api/execucoes/${EXEC.id}/abortar`, { method: "POST", headers: H() });
+    toast("Sinal de parada enviado.");
+};
+
+/* ============================================================
+   ESTADO: MESA DE DECISÃO
+   ============================================================ */
+async function carregarCiclo(id) {
+    const ex = EXECS.find(e => String(e.id) === String(id));
+    EXEC = ex || { id };
+    $("sel-exec").value = String(id);
+    chipEstado(EXEC);
+    const [d, p] = await Promise.all([
+        fetch(`/api/execucoes/${id}/divergencias`, { headers: H() }).then(r => r.json()),
+        fetch(`/api/execucoes/${id}/pagamentos`, { headers: H() }).then(r => r.ok ? r.json() : []),
+    ]);
+    DIVS = d || []; PAGS = p || [];
+    DIVS.forEach(x => { if (!x.status_revisao) x.status_revisao = "PENDENTE"; });
+    montar();
+    mostrar("stage-revisao");
+    render();
+}
+
+function montar() {
+    const map = {};
+    DIVS.forEach(d => {
+        const k = String(d.titulo_numero || "?");
+        (map[k] = map[k] || { numero: k, divs: [] }).divs.push(d);
+    });
+    PAGS.forEach(p => {
+        const k = String(p.titulo_numero || "?");
+        if (!map[k]) map[k] = { numero: k, divs: [] };
+    });
+    TITULOS = Object.values(map).map(t => {
+        t.pag = PAGS.find(p => String(p.titulo_numero) === t.numero) || null;
+        const d0 = t.divs[0] || {};
+        t.fornecedor = d0.fornecedor_nome || t.pag?.fornecedor || "";
+        t.cnpj = d0.fornecedor_cnpj || t.pag?.cnpj_credor || "";
+        t.valor = d0.valor_sienge ?? t.pag?.valor;
+        t.venc = d0.data_vencimento || t.pag?.vencimento || "";
+        recontar(t);
+        return t;
+    });
+    TITULOS.sort((a, b) => (b.critPend - a.critPend) || (b.pendentes - a.pendentes) || ((b.valor || 0) - (a.valor || 0)));
+}
+function recontar(t) {
+    const pend = t.divs.filter(d => d.status_revisao === "PENDENTE");
+    t.pendentes = pend.length;
+    t.critPend = pend.filter(d => d.criticidade === "CRITICA").length;
+    t.aprovados = t.divs.filter(d => d.status_revisao === "APROVADO").length;
+    t.rejeitados = t.divs.filter(d => d.status_revisao === "REJEITADO").length;
+}
+function problemasUnicos(t) {
+    t.divs.forEach(d => { d._irmaos = []; });
+    const vistos = new Map(), unicos = [];
+    t.divs.forEach(d => {
+        const k = [d.tipo, d.valor_sienge_campo, d.valor_boleto_campo || d.valor_nfe_campo].join("|");
+        if (vistos.has(k)) vistos.get(k)._irmaos.push(d);
+        else { vistos.set(k, d); unicos.push(d); }
+    });
+    unicos.sort((a, b) => (a.criticidade === "CRITICA" ? 0 : 1) - (b.criticidade === "CRITICA" ? 0 : 1));
+    return unicos;
+}
+
+/* colunas: No Sienge / No documento / Diferença */
+function colunas(d) {
+    const S = d.valor_sienge_campo;
+    const V = d.valor_boleto_campo && d.valor_boleto_campo !== "-" ? d.valor_boleto_campo
+        : (d.valor_nfe_campo && d.valor_nfe_campo !== "-" ? d.valor_nfe_campo : null);
+    const nS = numDe(S), nV = numDe(V);
+    const dS = dataDe(S), dV = dataDe(V);
+    const cS = cnpjDe(S), cV = cnpjDe(V);
+    if (dS && dV) {
+        const dias = Math.round((new Date(dV) - new Date(dS)) / 86400000);
+        return { s: dataBR(dS), v: dataBR(dV), diverge: dS !== dV,
+                 delta: dias ? Math.abs(dias) + " dia" + (Math.abs(dias) > 1 ? "s" : "") : null };
+    }
+    if (cS && cV) {
+        return { s: `<span class="cnpj">${fmtCNPJ(cS)}</span>`, v: `<span class="cnpj">${fmtCNPJ(cV)}</span>`,
+                 diverge: cS !== cV, delta: cS !== cV ? "outro CNPJ" : null };
+    }
+    if (nS != null && nV != null && /\d\.\d{2}\b/.test(String(S)) && /\d\.\d{2}\b/.test(String(V))) {
+        return { s: dinheiro(nS), v: dinheiro(nV), diverge: Math.abs(nS - nV) > 0.05,
+                 delta: Math.abs(nS - nV) > 0.05 ? dinheiro(Math.abs(nS - nV)) : null };
+    }
+    const fmt1 = x => { const n = numDe(x); return (n != null && /^\d+\.\d{2}$/.test(String(x).trim())) ? dinheiro(n) : (x || null); };
+    return { s: fmt1(S), v: fmt1(V), diverge: false, delta: null };
+}
+
+/* ---------- filtros ---------- */
+const FILTROS = [
+    ["PENDENTES", "Pendentes"], ["CRITICAS", "Críticas"], ["ATENCAO", "Atenção"],
+    ["OK", "Liberados"], ["DECIDIDOS", "Decididos"], ["TODOS", "Todos"],
+];
+function tituloNoFiltro(t) {
+    switch (FILTRO) {
+        case "PENDENTES": return t.pendentes > 0;
+        case "CRITICAS": return t.critPend > 0;
+        case "ATENCAO": return (t.pendentes - t.critPend) > 0;
+        case "OK": return t.divs.length === 0;
+        case "DECIDIDOS": return t.divs.length > 0 && t.pendentes === 0;
+        default: return true;
+    }
+}
+function divsDoTitulo(t) {
+    const probs = problemasUnicos(t);
+    switch (FILTRO) {
+        case "PENDENTES": return probs.filter(d => d.status_revisao === "PENDENTE");
+        case "CRITICAS": return probs.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "CRITICA");
+        case "ATENCAO": return probs.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "ATENCAO");
+        default: return probs;
+    }
+}
+function contar(f) {
+    const antigo = FILTRO; FILTRO = f;
+    const n = TITULOS.filter(tituloNoFiltro).length;
+    FILTRO = antigo;
+    return n;
+}
+function renderFiltros() {
+    const c = $("filtros"); c.innerHTML = "";
+    FILTROS.forEach(([f, label]) => {
+        const b = document.createElement("button");
+        b.className = (FILTRO === f ? "on " : "") + (f === "CRITICAS" ? "fc" : f === "ATENCAO" ? "fw" : "");
+        b.innerHTML = `${label} <b>${contar(f)}</b>`;
+        b.onclick = () => { FILTRO = f; render(); };
+        c.appendChild(b);
+    });
+}
+
+/* ---------- render da mesa ---------- */
+function render() {
+    renderFiltros();
+    atualizarVeredito();
+    const corpo = $("corpo"); corpo.innerHTML = "";
+    const vazio = $("estado-vazio");
+    const busca = BUSCA.toLowerCase();
+    let visiveis = 0;
+
+    TITULOS.forEach(t => {
+        if (busca) {
+            const alvo = (t.numero + " " + t.fornecedor + " " + (t.cnpj || "") + " " +
+                t.divs.map(d => NOMES[d.tipo] || d.tipo).join(" ")).toLowerCase();
+            if (!alvo.includes(busca)) return;
+        } else if (!tituloNoFiltro(t)) return;
+
+        const probs = busca ? problemasUnicos(t) : divsDoTitulo(t);
+        visiveis++;
+
+        const tr = document.createElement("tr");
+        tr.className = "grupo";
+        const direita = t.divs.length === 0
+            ? `<span class="g-ok">✓ liberado</span>`
+            : t.pendentes
+            ? `<button class="g-aprovar">✓ Aprovar título (${t.pendentes})</button>`
+            : (t.rejeitados ? `<span class="g-ok" style="color:var(--muted)">✗ ${t.rejeitados} rejeitado(s)</span>`
+                            : `<span class="g-ok">✓ revisado</span>`);
+        tr.innerHTML = `
+            <td colspan="2">
+                <div class="g-forn">${t.fornecedor || "Fornecedor"} <span style="font-weight:600;color:var(--muted)">· ${t.numero}${t.pag?.parcela ? "/" + t.pag.parcela : ""}</span></div>
+                <div class="g-meta">${t.cnpj || ""}${t.pag?.regime ? " · " + t.pag.regime : ""} · <span class="g-pagto">💳 dados do pagamento ${EXPANDIDOS.has(t.numero) ? "▴" : "▾"}</span></div>
+            </td>
+            <td colspan="3">
+                <div class="g-fatos">
+                    <div class="g-fato"><div class="k">Valor a pagar</div><div class="v">${dinheiro(t.valor)}</div></div>
+                    <div class="g-fato"><div class="k">Vencimento</div><div class="v">${dataBR(t.venc)}</div></div>
+                    ${t.pag?.forma ? `<div class="g-fato"><div class="k">Forma</div><div class="v" style="font-size:12.5px">${t.pag.forma}</div></div>` : ""}
+                    ${direita}
+                </div>
+            </td>`;
+        const btAp = tr.querySelector(".g-aprovar");
+        if (btAp) btAp.onclick = () => decidirTitulo(t, "APROVADO");
+        tr.querySelector(".g-pagto").onclick = () => {
+            EXPANDIDOS.has(t.numero) ? EXPANDIDOS.delete(t.numero) : EXPANDIDOS.add(t.numero);
+            render();
+        };
+        corpo.appendChild(tr);
+
+        if (EXPANDIDOS.has(t.numero) && t.pag) corpo.appendChild(pagtoRow(t));
+        probs.forEach(d => corpo.appendChild(aptoRow(d, t)));
+    });
+
+    if (!visiveis) {
+        const pend = DIVS.filter(d => d.status_revisao === "PENDENTE").length;
+        const filtroPend = ["PENDENTES", "CRITICAS", "ATENCAO"].includes(FILTRO);
+        vazio.hidden = false;
+        if (!busca && filtroPend && pend === 0 && DIVS.length) {
+            const apr = DIVS.filter(d => d.status_revisao === "APROVADO").length;
+            const rej = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
+            vazio.innerHTML = `<div class="emoji">🎉</div><h2>Tudo revisado!</h2>
+                <p>${apr} aprovado(s) · ${rej} rejeitado(s). A remessa está liberada.</p>
+                <div class="acoes">${rej ? '<button class="primario" onclick="exportarRejeitados()">⬇ Baixar rejeitados</button>' : ""}
+                <button onclick="abrirPasta()">📁 Abrir pasta dos anexos</button></div>`;
+        } else if (busca) {
+            vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nenhum título encontrado</h2><p>Nada bate com “${BUSCA}”.</p>`;
+        } else {
+            vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nada aqui</h2><p>Nenhum título com esse filtro.</p>`;
+        }
+    } else vazio.hidden = true;
+}
+
+function aptoRow(d, t) {
+    const st = d.status_revisao;
+    const tr = document.createElement("tr");
+    tr.className = "apto" + (st !== "PENDENTE" ? " decidido" : "");
+    const c = colunas(d);
+    const nx = d._irmaos?.length ? `<span class="nx" title="confirmado por ${d._irmaos.length + 1} verificações">${d._irmaos.length + 1}×</span>` : "";
+    const dica = DICAS[d.tipo] ? `<div class="p-sub">→ ${DICAS[d.tipo]}</div>` : "";
+    const acoes = st === "PENDENTE"
+        ? `<button class="sim" title="Aprovar">✓</button><button class="nao" title="Rejeitar">✗</button>`
+        : `<span class="st ${st}">${st === "APROVADO" ? "✓ aprovado" : "✗ rejeitado"}</span><button class="re" title="Reabrir">↩</button>`;
+    tr.innerHTML = `
+        <td><div class="p-cell"><span class="dot ${d.criticidade}"></span>
+            <div><div class="p-label">${NOMES[d.tipo] || d.tipo}${nx}</div>${dica}</div></div></td>
+        <td><span class="vcell">${c.s || '<span class="vazio">—</span>'}</span></td>
+        <td><span class="vcell ${c.diverge ? "doc-div" : ""}">${c.v || '<span class="vazio">—</span>'}</span></td>
+        <td>${c.delta ? `<span class="delta">${c.delta}</span>` : '<span class="vazio">—</span>'}</td>
+        <td><div class="d-cell">${acoes}</div></td>`;
+    const sim = tr.querySelector(".sim"), nao = tr.querySelector(".nao"), re = tr.querySelector(".re");
+    if (sim) sim.onclick = () => decidir(d, t, "APROVADO");
+    if (nao) nao.onclick = () => decidir(d, t, "REJEITADO");
+    if (re) re.onclick = () => decidir(d, t, "PENDENTE");
+    return tr;
+}
+
+function pagtoRow(t) {
+    const p = t.pag;
+    const tr = document.createElement("tr");
+    tr.className = "pagto-row";
+    const c1 = dig(p.cnpj_credor), c2 = dig(p.cnpj_destino);
+    const itens = [];
+    const item = (k, v, mono) => v && itens.push(`<div><div class="k">${k}</div><div class="v ${mono ? "mono" : ""}">${v}</div></div>`);
+    item("Forma", p.forma);
+    item("Valor da parcela (bruto)", p.valor != null ? dinheiro(p.valor) : null);
+    item("Chave Pix" + (p.tipo_chave_pix ? " (" + p.tipo_chave_pix + ")" : ""), p.chave_pix);
+    item("Banco · Ag · Conta", [p.banco, p.agencia, p.conta].filter(Boolean).join(" · "));
+    item("Titular", p.titular);
+    item("CNPJ destino", p.cnpj_destino ? p.cnpj_destino + (c1 && c2 ? (c1 === c2
+        ? ' <span class="ok">✓ é o credor</span>' : ' <span class="bad">✗ não é o credor</span>') : "") : null);
+    item("Linha digitável", p.linha_digitavel, true);
+    item("Banco do boleto", p.banco_boleto);
+    item("Valor do boleto", p.valor_boleto != null ? dinheiro(p.valor_boleto) : null);
+    if (p.retencoes) { try {
+        const r = JSON.parse(p.retencoes);
+        item("Retenções", Object.entries(r).map(([k, v]) => `${k} ${dinheiro(v)}`).join(" · "));
+    } catch (e) {} }
+    if (p.liquido_calc != null) {
+        const bate = Math.abs(p.liquido_calc - (t.valor || 0)) <= 0.05;
+        item("Líquido calculado", dinheiro(p.liquido_calc) + (bate ? ' <span class="ok">✓ bate com o fluxo</span>' : ` <span class="bad">✗ fluxo ${dinheiro(t.valor)}</span>`));
+    }
+    item("Regime", p.regime);
+    tr.innerHTML = `<td colspan="5"><div class="pagto-grid">${itens.join("")}</div></td>`;
+    return tr;
+}
+
+/* ---------- veredito / resumo ---------- */
+function atualizarVeredito() {
+    const total = DIVS.length;
+    const feitos = DIVS.filter(d => d.status_revisao !== "PENDENTE").length;
+    const crit = DIVS.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "CRITICA").length;
+    const warn = DIVS.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "ATENCAO").length;
+    const liberados = TITULOS.filter(t => t.divs.length === 0).length;
+    const rej = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
+    const pct = total ? Math.round(100 * feitos / total) : 100;
+
+    $("res-crit").textContent = crit;
+    $("res-warn").textContent = warn;
+    $("res-ok").textContent = liberados;
+    $("pr-pct").textContent = pct + "%";
+    $("pr-f").style.strokeDashoffset = String(119.4 * (1 - pct / 100));
+    $("bt-rejeitados").hidden = rej === 0;
+
+    const v = $("veredito"), st = $("v-status"), sub = $("v-sub");
+    if (crit > 0) {
+        v.className = "veredito crit";
+        st.textContent = "Remessa bloqueada";
+        sub.textContent = `${crit} problema(s) grave(s) esperam sua decisão antes do pagamento.`;
+    } else if (warn > 0) {
+        v.className = "veredito";
+        st.textContent = "Quase lá";
+        sub.textContent = `Sem críticas — restam ${warn} ponto(s) de atenção para revisar.`;
+    } else {
+        v.className = "veredito ok";
+        st.textContent = "Remessa liberada ✓";
+        sub.textContent = "Todos os apontamentos revisados. Pode montar a remessa no Sienge.";
+    }
+}
+
+/* ---------- decisões ---------- */
+async function post(d, status) {
+    const alvos = [d, ...(d._irmaos || [])];
+    for (const a of alvos) {
+        const r = await fetch("/api/divergencias/" + a.id + "/revisao", {
+            method: "POST", headers: H(),
+            body: JSON.stringify({ status, observacao: a.observacao_revisao || null }),
+        });
+        if (!r.ok) throw 0;
+        Object.assign(a, await r.json());
+    }
+}
+async function decidir(d, t, status) {
+    try {
+        await post(d, status);
+        recontar(t);
+        if (status !== "PENDENTE") toast(status === "APROVADO" ? "Aprovado ✓" : "Rejeitado ✗");
+        render();
+    } catch { toast("Erro ao salvar a decisão."); }
+}
+async function decidirTitulo(t, status) {
+    const agrupados = new Set();
+    t.divs.forEach(d => (d._irmaos || []).forEach(x => agrupados.add(x)));
+    const pend = t.divs.filter(d => d.status_revisao === "PENDENTE" && !agrupados.has(d));
+    try {
+        for (const d of pend) await post(d, status);
+        recontar(t);
+        toast((status === "APROVADO" ? "✔ Título " : "✖ Título ") + t.numero + " concluído");
+        render();
+    } catch { toast("Erro ao salvar a decisão."); }
+}
+
+/* ---------- ações do veredito ---------- */
+$("bt-excel").onclick = () => { if (EXEC) window.open(`/api/execucoes/${EXEC.id}/relatorio`, "_blank"); };
+$("bt-rejeitados").onclick = exportarRejeitados;
+async function exportarRejeitados() {
+    if (!EXEC) return;
+    const n = DIVS.filter(d => d.status_revisao === "REJEITADO").length;
+    if (!n) return toast("Nada rejeitado neste ciclo ainda.");
+    const r = await fetch(`/api/execucoes/${EXEC.id}/revisao/relatorio?status=REJEITADO`, { headers: H() });
+    if (!r.ok) return toast("Erro ao gerar o relatório.");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = "rejeitados_ciclo" + EXEC.id + ".xlsx";
+    a.click();
+    toast(n + " rejeitado(s) exportados ⬇");
+}
+$("bt-pasta").onclick = abrirPasta;
+async function abrirPasta() {
+    if (!EXEC) return;
+    try {
+        const r = await fetch(`/api/execucoes/${EXEC.id}/abrir-pasta`, { headers: H() });
+        const d = await r.json();
+        if (d.aberto) return;
+        if (!d.existe) { toast("A pasta deste ciclo ainda não existe."); return; }
+        prompt("Abra esta pasta no computador do robô:", d.pasta);
+    } catch { toast("Não foi possível abrir a pasta."); }
+}
+
+$("busca").addEventListener("input", e => {
+    BUSCA = e.target.value;
+    if (!$("stage-revisao").hidden) render();
+});
+
+/* ============================================================
+   UPLOAD — botão + arrastar e soltar em qualquer lugar
+   ============================================================ */
+$("bt-enviar").onclick = () => $("file-relatorio").click();
+$("dropzone").onclick = () => $("file-relatorio").click();
+$("file-relatorio").onchange = e => { const f = e.target.files[0]; if (f) enviarRelatorio(f); e.target.value = ""; };
+
+let dragN = 0;
+window.addEventListener("dragenter", e => { e.preventDefault(); if (++dragN === 1) $("drop-veu").classList.add("on"); });
+window.addEventListener("dragleave", e => { e.preventDefault(); if (--dragN <= 0) { dragN = 0; $("drop-veu").classList.remove("on"); } });
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => {
+    e.preventDefault(); dragN = 0; $("drop-veu").classList.remove("on");
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) enviarRelatorio(f);
+});
+
+async function enviarRelatorio(file) {
+    const bt = $("bt-enviar");
+    bt.disabled = true; bt.textContent = "Enviando " + file.name.slice(0, 22) + "…";
+    try {
+        const fd = new FormData();
+        fd.append("arquivo", file);
+        const r = await fetch("/api/execucoes/iniciar-relatorio", { method: "POST", body: fd });
+        if (r.status === 409) { toast("Já existe um ciclo rodando."); return; }
+        if (!r.ok) {
+            const e = await r.json().catch(() => ({}));
+            toast("Erro ao iniciar: " + (e.detail || r.status)); return;
+        }
+        const data = await r.json();
+        toast("Relatório recebido — o robô começou ✓");
+        await recarregarExecs();
+        const ex = EXECS.find(x => x.id === data.execucao_id) || { id: data.execucao_id, status: "RODANDO" };
+        acompanharCiclo(ex);
+    } catch (e) {
+        toast("Erro de conexão ao enviar.");
+    } finally {
+        bt.disabled = false; bt.textContent = "⬆ Enviar relatório";
+    }
+}
+
+/* ============================================================
+   GAVETAS: histórico + configurações + apresentação
+   ============================================================ */
+function abrirGaveta(id) { $("veu").classList.add("on"); $(id).classList.add("on"); }
+function fecharGavetas() {
+    $("veu").classList.remove("on");
+    document.querySelectorAll(".drawer").forEach(d => d.classList.remove("on"));
+}
+$("veu").onclick = fecharGavetas;
+document.querySelectorAll("[data-fecha]").forEach(b => b.onclick = fecharGavetas);
+document.addEventListener("keydown", e => { if (e.key === "Escape") fecharGavetas(); });
+
+$("bt-apres").onclick = () => window.open("/static/relatorio_conciliacao.html", "_blank");
+
+$("bt-hist").onclick = async () => {
+    abrirGaveta("drawer-hist");
+    await recarregarExecs();
+    const c = $("hist-lista"); c.innerHTML = "";
+    EXECS.forEach(e => {
+        const el = document.createElement("div");
+        el.className = "h-item" + (EXEC && e.id === EXEC.id ? " sel" : "");
+        el.innerHTML = `<span class="h-id">#${e.id}</span>
+            <span class="h-data">${(e.iniciado_em || "").replace("T", " ").slice(0, 16)}</span>
+            <span class="h-nums"><b>${e.total_titulos || 0}</b> títulos · <span class="c">${e.total_criticos || 0} crít.</span></span>
+            <span class="chip-estado ${e.status}">${e.status.toLowerCase()}</span>`;
+        el.onclick = () => {
+            fecharGavetas();
+            e.status === "RODANDO" ? acompanharCiclo(e) : carregarCiclo(e.id);
+        };
+        c.appendChild(el);
+    });
+    carregarLogsHist();
+};
+async function carregarLogsHist() {
+    if (!EXEC) return;
+    const term = $("hist-term"); term.innerHTML = "";
+    const r = await fetch(`/api/execucoes/${EXEC.id}/logs`, { headers: H() });
+    if (!r.ok) return;
+    (await r.json()).forEach(l => {
+        const d = document.createElement("div");
+        d.className = "log-" + l.level;
+        const ts = (l.timestamp || "").slice(11, 19);
+        d.textContent = `[${ts}] ${l.mensagem}`;
+        term.appendChild(d);
+    });
+    term.scrollTop = term.scrollHeight;
+}
+
+/* configurações */
 const CONFIG_FIELDS = [
     "SIENGE_BASE_URL", "SIENGE_USERNAME", "SIENGE_PASSWORD",
     "SANTANDER_CLIENT_ID", "SANTANDER_CLIENT_SECRET", "SANTANDER_CERT_PATH", "SANTANDER_CERT_PASSWORD", "SANTANDER_ENV",
     "ANTHROPIC_API_KEY",
     "SEFAZ_CNPJ", "SEFAZ_CERT_PATH", "SEFAZ_CERT_PASSWORD",
-    "NOTIF_EMAIL_DESTINO", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"
+    "NOTIF_EMAIL_DESTINO", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD",
 ];
-
-async function fetchConfig() {
-    const r = await fetch("/api/config", { headers: getHeaders() });
+$("bt-config").onclick = async () => {
+    abrirGaveta("drawer-config");
+    const r = await fetch("/api/config", { headers: H() });
     if (!r.ok) return;
-    const config = await r.json();
-    
-    CONFIG_FIELDS.forEach(f => {
-        const el = document.getElementById("cfg_" + f);
-        if (el && config[f]) {
-            el.value = config[f];
-        }
-    });
-}
-
-async function saveConfig() {
+    const cfg = await r.json();
+    CONFIG_FIELDS.forEach(f => { const el = $("cfg_" + f); if (el && cfg[f]) el.value = cfg[f]; });
+};
+$("bt-salvar-cfg").onclick = async () => {
     const payload = {};
-    CONFIG_FIELDS.forEach(f => {
-        const el = document.getElementById("cfg_" + f);
-        if (el) {
-            payload[f] = el.value;
-        }
-    });
-    
-    const r = await fetch("/api/config", {
-        method: "POST",
-        headers: getHeaders(),
-        body: JSON.stringify(payload)
-    });
-    
-    if (r.ok) {
-        alert("Configurações salvas e recarregadas com sucesso no servidor!");
-    } else {
-        alert("Erro ao salvar configurações.");
-    }
-}
+    CONFIG_FIELDS.forEach(f => { const el = $("cfg_" + f); if (el) payload[f] = el.value; });
+    const r = await fetch("/api/config", { method: "POST", headers: H(), body: JSON.stringify(payload) });
+    toast(r.ok ? "Configurações salvas ✓" : "Erro ao salvar.");
+    if (r.ok) fecharGavetas();
+};
+
+/* ============================================================ */
+boot();
