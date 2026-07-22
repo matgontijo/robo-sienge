@@ -1,37 +1,28 @@
 import pytest
 from fastapi.testclient import TestClient
-import base64
-import json
 from dashboard.app import app
-import config
 
 client = TestClient(app)
 
-def get_auth_header():
-    token = base64.b64encode(f"{config.DASHBOARD_USER}:{config.DASHBOARD_PASSWORD}".encode()).decode()
-    return {"Authorization": f"Basic {token}"}
-
-def test_auth_desligada_entra_sem_login():
-    # Padrão local: DASHBOARD_AUTH desligado -> acessa sem credencial.
-    import config
-    assert config.DASHBOARD_AUTH is False
+def test_painel_sem_login_entra_direto():
+    # O painel não tem autenticação: qualquer rota responde sem credencial.
     response = client.get("/api/stats")
     assert response.status_code == 200
 
-def test_auth_ligada_exige_credencial(monkeypatch):
-    # Cenário do painel público (Render): DASHBOARD_AUTH ligado -> exige login.
-    import config
-    monkeypatch.setattr(config, "DASHBOARD_AUTH", True)
-    # sem header
-    assert client.get("/api/stats").status_code == 401
-    # senha errada
-    wrong = base64.b64encode(b"admin:senha_errada").decode()
-    assert client.get("/api/stats", headers={"Authorization": f"Basic {wrong}"}).status_code == 401
-    # credencial correta
-    assert client.get("/api/stats", headers=get_auth_header()).status_code == 200
+def test_header_authorization_antigo_nao_quebra():
+    # Navegadores com token salvo de versões antigas mandavam
+    # "Authorization: Basic null" — não pode gerar 401 nem pop-up.
+    response = client.get("/api/stats", headers={"Authorization": "Basic null"})
+    assert response.status_code == 200
+    assert "WWW-Authenticate" not in response.headers
+
+def test_me_retorna_admin_local():
+    response = client.get("/api/me")
+    assert response.status_code == 200
+    assert response.json() == {"username": "local", "role": "ADMIN"}
 
 def test_stats_retorna_estrutura_correta():
-    response = client.get("/api/stats", headers=get_auth_header())
+    response = client.get("/api/stats")
     assert response.status_code == 200
     data = response.json()
     assert "ultima_execucao" in data
@@ -45,7 +36,7 @@ def test_iniciar_execucao_retorna_id():
         "data_inicio": "2024-01-01",
         "data_fim": "2024-01-31"
     }
-    response = client.post("/api/execucoes/iniciar", json=payload, headers=get_auth_header())
+    response = client.post("/api/execucoes/iniciar", json=payload)
     assert response.status_code in [200, 409] # 409 se uma ja estiver rodando no bd local
 
     if response.status_code == 200:
@@ -56,29 +47,28 @@ def test_iniciar_execucao_retorna_id():
 def test_conflito_execucao_ja_rodando(mocker):
     # Vamos mockar o get_execucoes para forçar um status RODANDO
     mocker.patch("dashboard.database.get_execucoes", return_value=[type("E", (), {"status": "RODANDO"})()])
-    
+
     payload = {
         "data_inicio": "2024-01-01",
         "data_fim": "2024-01-31"
     }
-    response = client.post("/api/execucoes/iniciar", json=payload, headers=get_auth_header())
+    response = client.post("/api/execucoes/iniciar", json=payload)
     assert response.status_code == 409
 
 def test_download_relatorio_nao_existe():
     # Passando id=9999 q provavelmente nao existe, app retorna 404
-    response = client.get("/api/execucoes/99999/relatorio", headers=get_auth_header())
+    response = client.get("/api/execucoes/99999/relatorio")
     assert response.status_code == 404
 
 def test_stream_fecha_quando_concluido(mocker):
     # Testa se o generator retorna 'close' para uma execução concluida
     mocker.patch("dashboard.database.get_execucao", return_value=type("E", (), {"status": "CONCLUIDO"})())
     mocker.patch("dashboard.database.get_logs", return_value=[])
-    
-    token = base64.b64encode(f"{config.DASHBOARD_USER}:{config.DASHBOARD_PASSWORD}".encode()).decode()
-    response = client.get(f"/api/stream/1?token={token}")
-    
+
+    response = client.get("/api/stream/1")
+
     assert response.status_code == 200
-    
+
     # O TestClient não roda assíncrono para streaming no event loop, ele vai consumir até o final
     # Como mockamos o DB para retornar CONCLUIDO logo no primeiro loop, a stream vai fechar.
     # Lemos a resposta como str

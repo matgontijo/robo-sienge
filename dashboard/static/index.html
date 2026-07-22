@@ -4,35 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Robô de Conferência · Grupo Garden</title>
-    <link rel="stylesheet" href="/static/style.css?v=16">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=18">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- ==================== LOGIN ==================== -->
-    <div class="login-wrapper" id="login-container">
-        <div class="login-box">
-            <div class="login-brand">
-                <div class="mark">🛡️</div>
-                <div>
-                    <b>Robô de Conferência</b>
-                    <span>Contas a Pagar · Grupo Garden</span>
-                </div>
-            </div>
-            <h2>Entre para acessar o painel</h2>
-
-            <div id="login-error">Usuário ou senha incorretos.</div>
-
-            <input type="text" id="username" class="login-input" placeholder="Usuário" autocomplete="username">
-            <input type="password" id="password" class="login-input" placeholder="Senha" autocomplete="current-password"
-                   onkeydown="if(event.key==='Enter')login()">
-
-            <button class="btn-trk" id="btn-login" onclick="login()">Entrar</button>
-            <div class="login-foot">Dúvidas? Contate o administrador.</div>
-        </div>
-    </div>
-
     <!-- ==================== APP ==================== -->
-    <div class="app" id="app-container" style="display: none;">
+    <div class="app" id="app-container">
 
         <aside class="side">
             <div class="brand">
@@ -307,6 +287,6 @@
         </div>
     </div>
 
-    <script src="/static/app.js?v=16"></script>
+    <script src="/static/app.js?v=18"></script>
 </body>
 </html>

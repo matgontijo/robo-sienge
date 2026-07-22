@@ -1,4 +1,4 @@
-let token = sessionStorage.getItem("auth_token");
+sessionStorage.removeItem("auth_token"); // limpa token de versões antigas do painel
 
 const NOMES_TIPO = {
     "PAGAMENTO_DESTINO_DIVERGENTE": "Destino do pagamento ≠ CNPJ do credor",
@@ -29,85 +29,15 @@ let chartInstance = null;
 let currentExecId = null;
 let eventSource = null;
 let allDivergencias = [];
-let userRole = null;
+let userRole = "ADMIN"; // painel sem login: acesso local com todos os recursos
 
-function entrarNoApp() {
-    document.getElementById('login-container').style.display = 'none';
-    document.getElementById('app-container').style.display = 'flex';
-    initDashboard();
-}
-
-window.onload = async () => {
-    // Se a autenticação estiver desligada (uso local), o /api/stats responde 200
-    // sem credencial — entra direto, sem tela de login.
-    try {
-        const r = await fetch("/api/stats");
-        if (r.ok) return entrarNoApp();
-    } catch (e) { /* servidor fora do ar; cai na tela de login */ }
-    if (token) entrarNoApp();  // já tinha token salvo (auth ligada)
-};
-
-function login() {
-    const u = document.getElementById("username").value;
-    const p = document.getElementById("password").value;
-    
-    if(!u || !p) return;
-    
-    token = btoa(u + ":" + p);
-    
-    const btn = document.getElementById("btn-login");
-    const err = document.getElementById("login-error");
-    
-    btn.innerText = "Acessando...";
-    btn.disabled = true;
-    err.style.display = "none";
-    
-    fetch("/api/stats", { headers: getHeaders() })
-    .then(r => {
-        if (r.ok) {
-            sessionStorage.setItem("auth_token", token);
-            document.getElementById('login-container').style.display = 'none';
-            document.getElementById('app-container').style.display = 'flex';
-            initDashboard();
-        } else {
-            err.style.display = "block";
-            token = null;
-            btn.innerText = "Acessar Painel";
-            btn.disabled = false;
-        }
-    })
-    .catch(() => {
-        err.innerText = "Erro de conexão com o servidor.";
-        err.style.display = "block";
-        token = null;
-        btn.innerText = "Acessar Painel";
-        btn.disabled = false;
-    });
-}
+window.onload = () => initDashboard();
 
 function getHeaders() {
-    const h = { "Content-Type": "application/json" };
-    if (token) h["Authorization"] = "Basic " + token;  // omite quando não há login
-    return h;
+    return { "Content-Type": "application/json" };
 }
 
 async function initDashboard() {
-    try {
-        const meRes = await fetch("/api/me", { headers: getHeaders() });
-        if (meRes.ok) {
-            const meData = await meRes.json();
-            userRole = meData.role;
-            
-            if (userRole !== 'ADMIN') {
-                const nav = document.getElementById('nav-settings');
-                if (nav) nav.style.display = 'none';
-            }
-            if (userRole === 'LEITURA') {
-                document.querySelectorAll('.header-actions button').forEach(b => b.style.display = 'none');
-            }
-        }
-    } catch(e) { console.error(e); }
-
     await fetchStats();
     await fetchHistorico();
     atualizarBadgeConferencia();
@@ -230,6 +160,9 @@ function renderChart(dados) {
         return;
     }
     
+    // tema escuro do gráfico — combina com o design system v2
+    Chart.defaults.color = '#8A8F98';
+    Chart.defaults.font.family = '"Geist", system-ui, sans-serif';
     chartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -238,18 +171,18 @@ function renderChart(dados) {
                 {
                     label: 'Títulos processados',
                     data: dsTitulos,
-                    backgroundColor: 'rgba(15, 118, 110, 0.45)',
-                    borderColor: 'rgb(15, 118, 110)',
+                    backgroundColor: 'rgba(20, 184, 166, 0.45)',
+                    borderColor: 'rgb(45, 212, 191)',
                     borderWidth: 1.5,
-                    borderRadius: 5
+                    borderRadius: 6
                 },
                 {
                     label: 'Apontamentos',
                     data: dsDiverg,
-                    backgroundColor: 'rgba(198, 57, 47, 0.4)',
-                    borderColor: 'rgb(198, 57, 47)',
+                    backgroundColor: 'rgba(248, 113, 113, 0.35)',
+                    borderColor: 'rgb(248, 113, 113)',
                     borderWidth: 1.5,
-                    borderRadius: 5
+                    borderRadius: 6
                 }
             ]
         },
@@ -257,7 +190,8 @@ function renderChart(dados) {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: true }
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.06)' }, border: { display: false } },
+                x: { grid: { display: false }, border: { display: false } }
             }
         }
     });
@@ -340,8 +274,7 @@ async function selectExecucao(id) {
 }
 
 function startSSE(id) {
-    // Para SSE nativo que nao tem Header, passamos token via QS
-    eventSource = new EventSource(`/api/stream/${id}` + (token ? `?token=${token}` : ""));
+    eventSource = new EventSource(`/api/stream/${id}`);
     
     eventSource.onmessage = (e) => {
         const term = document.getElementById("terminal-logs");
@@ -428,11 +361,11 @@ document.getElementById("filtro-crit").addEventListener("change", renderDivergen
 document.getElementById("filtro-busca").addEventListener("input", renderDivergencias);
 
 function abrirDanfe(path) {
-    window.open(`/api/execucoes/${currentExecId}/danfe?path=${encodeURIComponent(path)}` + (token ? `&token=${token}` : ""), '_blank');
+    window.open(`/api/execucoes/${currentExecId}/danfe?path=${encodeURIComponent(path)}`, '_blank');
 }
 
 function baixarRelatorio() {
-    window.open(`/api/execucoes/${currentExecId}/relatorio` + (token ? `?token=${token}` : ""), '_blank');
+    window.open(`/api/execucoes/${currentExecId}/relatorio`, '_blank');
 }
 
 async function abrirPastaAnexos() {
@@ -506,8 +439,7 @@ async function rodarComRelatorio(input) {
 
     try {
         const r = await fetch("/api/execucoes/iniciar-relatorio", {
-            method: "POST",
-            headers: { "Authorization": "Basic " + token }, // sem Content-Type: o browser põe o boundary
+            method: "POST", // sem headers: o browser põe o Content-Type com o boundary
             body: fd
         });
 
@@ -567,7 +499,7 @@ function switchMainTab(viewName) {
     if (viewName === 'conferencia') {
         // carrega a tela de conferência na primeira abertura (e recarrega os dados nas demais)
         const frame = document.getElementById('frame-conferencia');
-        if (frame && !frame.src) frame.src = '/static/revisao.html?v=12';
+        if (frame && !frame.src) frame.src = '/static/revisao.html?v=18';
         atualizarBadgeConferencia();
     }
 }
