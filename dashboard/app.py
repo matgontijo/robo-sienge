@@ -318,16 +318,32 @@ def iniciar_execucao_relatorio(
     except ValueError:
         raise HTTPException(status_code=400, detail="Datas inválidas — use o formato YYYY-MM-DD ou deixe em branco")
 
-    def rotina_em_background():
-        orchestrator.executar_ciclo(d_inicio, d_fim, iniciado_por="dashboard-relatorio", relatorio_path=dest)
+    # O ciclo roda como PROCESSO SEPARADO (não thread):
+    #  1. "Parar" pode matar o processo na hora (imediato de verdade);
+    #  2. reiniciar o painel não derruba mais um ciclo em andamento.
+    import subprocess, sys, time as _t
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    os.makedirs(config.LOGS_DIR, exist_ok=True)
+    log_proc = open(os.path.join(config.LOGS_DIR, "ciclo_subprocesso.log"), "ab")
+    ids_antes = {e.id for e in db.get_execucoes(limit=5)}
+    proc = subprocess.Popen(
+        [sys.executable, os.path.join(base_dir, "main.py"), "run",
+         "--relatorio", dest, "--inicio", d_inicio.isoformat(), "--fim", d_fim.isoformat()],
+        cwd=base_dir, stdout=log_proc, stderr=subprocess.STDOUT,
+        creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0),
+    )
 
-    threading.Thread(target=rotina_em_background).start()
-
-    import time
-    time.sleep(0.5)
-    ultima = db.get_execucoes(limit=1)
-    if ultima and ultima[0].status == "RODANDO":
-        return {"execucao_id": ultima[0].id}
+    # aguarda o processo filho registrar a execução no banco (até ~8s)
+    for _ in range(16):
+        _t.sleep(0.5)
+        nova = next((e for e in db.get_execucoes(limit=5)
+                     if e.id not in ids_antes and e.status == "RODANDO"), None)
+        if nova:
+            db.atualizar_execucao(nova.id, pid=proc.pid)
+            return {"execucao_id": nova.id}
+        if proc.poll() is not None:  # processo morreu antes de registrar
+            raise HTTPException(status_code=500,
+                                detail="O ciclo não conseguiu iniciar — veja logs/ciclo_subprocesso.log")
     return {"execucao_id": 0}
 
 @app.post("/api/execucoes/{execucao_id}/abortar", dependencies=[Depends(get_current_user)])
@@ -340,9 +356,31 @@ def abortar_execucao(execucao_id: int, current_user: db.Usuario = Depends(get_cu
         raise HTTPException(status_code=404, detail="Execução não encontrada")
     if execucao.status != "RODANDO":
         raise HTTPException(status_code=400, detail="Execução não está rodando")
-        
+
+    # 1) sinal cooperativo (ciclos antigos em thread respeitam entre títulos)
     orchestrator.abortar_execucao(execucao_id)
-    return {"status": "Abort signal sent"}
+
+    # 2) parada IMEDIATA: mata o processo do ciclo (e filhos) na hora
+    matou = False
+    pid = getattr(execucao, "pid", None)
+    if pid:
+        import subprocess
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               capture_output=True, timeout=10)
+            else:
+                os.kill(pid, 9)
+            matou = True
+        except Exception:  # noqa: BLE001 — processo pode já ter morrido
+            matou = False
+
+    from datetime import datetime as _dt
+    db.atualizar_execucao(execucao_id, status="ABORTADO", concluido_em=_dt.now(),
+                          erro_mensagem="Interrompido pelo usuário")
+    db.registrar_log(execucao_id, "WARNING", "dashboard",
+                     "Ciclo interrompido pelo usuário" + (" (processo encerrado na hora)" if matou else ""))
+    return {"status": "ABORTADO", "imediato": bool(matou)}
 
 # ---------------------------------------------------------
 # Configurações do .env
@@ -380,44 +418,7 @@ def update_config(payload: dict, current_user: db.Usuario = Depends(get_current_
 # ---------------------------------------------------------
 @app.get("/api/stream/{execucao_id}")
 async def stream_logs(execucao_id: int, req: Request):
-    
-    # Valida Auth no cabeçalho ou cookie para o SSE (geralmente enviamos o header de auth)
-    # A dependência Depends() falha no SSE nativo do navegador as vezes, por isso
-    # o frontend tem que enviar no EventSource se possível ou usar cookies.
-    # Com a autenticação desligada (uso local), o stream é aberto direto.
-    if config.DASHBOARD_AUTH:
-        auth = req.headers.get("Authorization")
-        if not auth:
-            auth = req.query_params.get("token")
-            if auth and auth not in ("null", "undefined"):
-                auth = f"Basic {auth}"
-            else:
-                auth = None
-
-        if not auth:
-            raise HTTPException(status_code=401, detail="Login necessário")
-
-        import base64
-        try:
-            scheme, credentials = auth.split()
-            if scheme.lower() != 'basic':
-                raise Exception()
-            decoded = base64.b64decode(credentials).decode("ascii")
-            username, _, password = decoded.partition(":")
-
-            db_session = db.SessionLocal()
-            try:
-                user = db_session.query(db.Usuario).filter(db.Usuario.username == username).first()
-                if not user or not db.pwd_context.verify(password, user.password_hash):
-                    raise Exception()
-            finally:
-                db_session.close()
-
-        except Exception:
-            # NUNCA envia WWW-Authenticate: é isso que dispara o pop-up nativo
-            # de login do navegador por cima do painel.
-            raise HTTPException(status_code=401, detail="Login inválido")
-
+    # Painel sem login: o stream é aberto direto, sem validação de credencial.
     async def event_generator():
         last_id = 0
         while True:

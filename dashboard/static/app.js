@@ -172,9 +172,15 @@ function atualizarRun() {
 }
 
 $("bt-abortar").onclick = async () => {
-    if (!EXEC || !confirm("Parar o ciclo atual? Ele encerra após o título em andamento.")) return;
-    await fetch(`/api/execucoes/${EXEC.id}/abortar`, { method: "POST", headers: H() });
-    toast("Sinal de parada enviado.");
+    if (!EXEC || !confirm("Parar o ciclo agora? A conferência é interrompida imediatamente.")) return;
+    const r = await fetch(`/api/execucoes/${EXEC.id}/abortar`, { method: "POST", headers: H() });
+    if (!r.ok) { toast("Não foi possível parar."); return; }
+    if (es) { es.close(); es = null; }
+    toast("Ciclo interrompido ✋");
+    await recarregarExecs();
+    const done = EXECS.filter(e => e.status === "CONCLUIDO");
+    if (done.length) await carregarCiclo(done[0].id);
+    else mostrar("stage-vazio");
 };
 
 /* ============================================================

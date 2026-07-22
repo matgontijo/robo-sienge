@@ -37,6 +37,7 @@ class Execucao(Base):
     relatorio_path = Column(String, nullable=True)
     erro_mensagem = Column(String, nullable=True)
     iniciado_por = Column(String, default="scheduler") # "scheduler" | "dashboard" | "cli"
+    pid = Column(Integer, nullable=True)  # processo do ciclo — permite parar na hora
 
     divergencias = relationship("Divergencia", back_populates="execucao", cascade="all, delete-orphan")
     logs = relationship("LogExecucao", back_populates="execucao", cascade="all, delete-orphan")
@@ -141,11 +142,16 @@ def _migrar_colunas():
         "revisado_em": "DATETIME",
     }
     novas_pag = {"retencoes": "TEXT", "liquido_calc": "REAL", "regime": "TEXT"}
+    novas_exec = {"pid": "INTEGER"}
     with engine.connect() as conn:
         existentes = {r[1] for r in conn.execute(text("PRAGMA table_info(divergencias)"))}
         for col, ddl in novas.items():
             if col not in existentes:
                 conn.execute(text(f"ALTER TABLE divergencias ADD COLUMN {col} {ddl}"))
+        existentes_exec = {r[1] for r in conn.execute(text("PRAGMA table_info(execucoes)"))}
+        for col, ddl in novas_exec.items():
+            if existentes_exec and col not in existentes_exec:
+                conn.execute(text(f"ALTER TABLE execucoes ADD COLUMN {col} {ddl}"))
         existentes_pag = {r[1] for r in conn.execute(text("PRAGMA table_info(pagamentos)"))}
         for col, ddl in novas_pag.items():
             if existentes_pag and col not in existentes_pag:
