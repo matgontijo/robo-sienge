@@ -409,6 +409,16 @@ tr.apto.decidido .p-label, tr.apto.decidido .vcell { opacity: .45; }
 }
 .bt-salvar:hover { background: var(--accent-2); box-shadow: var(--glow); }
 
+/* faixa de painel desligado — impossível não ver */
+.faixa-offline {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 100;
+    background: linear-gradient(90deg, #7f1d1d, #b91c1c);
+    color: #fff; font-size: 13.5px; font-weight: 700;
+    padding: 10px 18px; text-align: center;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .5);
+}
+.faixa-offline .fo-x { opacity: .75; font-weight: 600; margin-left: 8px; }
+
 /* toast */
 .toast {
     position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);

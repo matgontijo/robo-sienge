@@ -468,24 +468,42 @@ function atualizarVeredito() {
 }
 
 /* ---------- decisões ---------- */
+// Erro de rede (painel desligado) é diferente de erro do servidor — a mensagem
+// precisa dizer a verdade para você saber o que fazer.
+class PainelOffline extends Error {}
+
 async function post(d, status) {
     const alvos = [d, ...(d._irmaos || [])];
     for (const a of alvos) {
-        const r = await fetch("/api/divergencias/" + a.id + "/revisao", {
-            method: "POST", headers: H(),
-            body: JSON.stringify({ status, observacao: a.observacao_revisao || null }),
-        });
-        if (!r.ok) throw 0;
+        let r;
+        try {
+            r = await fetch("/api/divergencias/" + a.id + "/revisao", {
+                method: "POST", headers: H(),
+                body: JSON.stringify({ status, observacao: a.observacao_revisao || null }),
+            });
+        } catch (e) {
+            throw new PainelOffline();   // servidor fora do ar / sem conexão
+        }
+        if (!r.ok) throw new Error("HTTP " + r.status);
         Object.assign(a, await r.json());
+    }
+}
+function avisarErro(e) {
+    if (e instanceof PainelOffline) {
+        toast("⚠ Painel desconectado — reabra o atalho 'Painel Robo Sienge'. Nada do que você já decidiu foi perdido.");
+        mostrarOffline(true);
+    } else {
+        toast("Não foi possível salvar (" + (e.message || "erro") + ").");
     }
 }
 async function decidir(d, t, status) {
     try {
         await post(d, status);
+        mostrarOffline(false);
         recontar(t);
         if (status !== "PENDENTE") toast(status === "APROVADO" ? "Aprovado ✓" : "Rejeitado ✗");
         render();
-    } catch { toast("Erro ao salvar a decisão."); }
+    } catch (e) { avisarErro(e); }
 }
 async function decidirTitulo(t, status) {
     const agrupados = new Set();
@@ -493,10 +511,37 @@ async function decidirTitulo(t, status) {
     const pend = t.divs.filter(d => d.status_revisao === "PENDENTE" && !agrupados.has(d));
     try {
         for (const d of pend) await post(d, status);
+        mostrarOffline(false);
         recontar(t);
         toast((status === "APROVADO" ? "✔ Título " : "✖ Título ") + t.numero + " concluído");
         render();
-    } catch { toast("Erro ao salvar a decisão."); }
+    } catch (e) { avisarErro(e); }
+}
+
+// Faixa fixa de "painel desligado" — some sozinha quando o servidor volta
+function mostrarOffline(on) {
+    let el = document.getElementById("faixa-offline");
+    if (on) {
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "faixa-offline";
+            el.className = "faixa-offline";
+            el.innerHTML = `⚠ <b>Painel desligado</b> — suas decisões não estão sendo salvas.
+                Reabra o atalho <b>Painel Robo Sienge</b> na Área de Trabalho.
+                <span class="fo-x">tentando reconectar…</span>`;
+            document.body.appendChild(el);
+            clearInterval(mostrarOffline._t);
+            mostrarOffline._t = setInterval(async () => {
+                try {
+                    const r = await fetch("/api/stats", { cache: "no-store" });
+                    if (r.ok) { mostrarOffline(false); toast("Painel reconectado ✓"); }
+                } catch (e) { /* segue offline */ }
+            }, 4000);
+        }
+    } else if (el) {
+        clearInterval(mostrarOffline._t);
+        el.remove();
+    }
 }
 
 /* ---------- ações do veredito ---------- */
