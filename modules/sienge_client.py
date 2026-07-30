@@ -1,3 +1,4 @@
+import re
 import time
 import base64
 import requests
@@ -205,9 +206,14 @@ class SiengeClient:
                 logger.warning(f"Título {titulo_id} não possui anexos")
                 return None
                 
-            # Pega o primeiro anexo (schema BillAttachment: campo "attachmentid")
-            primeiro_anexo = resultados[0]
-            anexo_id = primeiro_anexo.get("attachmentid", primeiro_anexo.get("id"))
+            # O primeiro anexo não é necessariamente a nota: prefere o que o nome
+            # identifica como NF/DANFE e só cai no primeiro se nenhum se identificar.
+            escolhido = next(
+                (a for a in resultados
+                 if self._classificar_anexo(a.get("name") or a.get("fileName") or "") == "nf"),
+                resultados[0],
+            )
+            anexo_id = escolhido.get("attachmentid", escolhido.get("id"))
 
             if not anexo_id:
                 logger.warning(f"Título {titulo_id} com anexo sem ID")
@@ -225,7 +231,9 @@ class SiengeClient:
             return None
 
     # Palavras-chave para classificar anexos por nome de arquivo
-    _KW_NF = ("danfe", "nfe", "nf-e", "nota", "fiscal", "nfse", "nf_", "_nf", "nf.")
+    _KW_NF = ("danfe", "nfe", "nf-e", "nota", "fiscal", "nfse")
+    # "NF 105898", "NF-105898", "nf_2", "12 - NF.pdf": NF como palavra isolada
+    _RE_NF_NOME = re.compile(r"(?:^|[\s._\-])nfs?e?(?:[\s._\-]|\d|$)", re.I)
     _KW_BOLETO = ("boleto", "bol_", "_bol", "cobranca", "cobrança", "titulo", "título", "pix", "duplicata")
 
     @classmethod
@@ -234,7 +242,7 @@ class SiengeClient:
         n = (nome or "").lower()
         if any(k in n for k in cls._KW_BOLETO):
             return "boleto"
-        if any(k in n for k in cls._KW_NF):
+        if any(k in n for k in cls._KW_NF) or cls._RE_NF_NOME.search(n):
             return "nf"
         return None
 
@@ -295,7 +303,10 @@ class SiengeClient:
                 f.write(conteudo)
 
             tipo = self._classificar_anexo(nome_seguro)
-            resultado["anexos"].append({"id": anexo_id, "nome": nome_seguro, "path": caminho, "tipo": tipo})
+            # guarda os bytes de TODOS os anexos: quem decide qual é a nota é o
+            # conteúdo (lido depois), não o nome do arquivo nem a ordem.
+            resultado["anexos"].append({"id": anexo_id, "nome": nome_seguro, "path": caminho,
+                                        "tipo": tipo, "bytes": conteudo})
 
             if tipo == "nf" and resultado["nf_bytes"] is None:
                 resultado["nf_bytes"], resultado["nf_path"] = conteudo, caminho

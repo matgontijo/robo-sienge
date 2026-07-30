@@ -337,6 +337,11 @@ REGRAS OBRIGATÓRIAS:
         # Declaração impressa na própria nota: "OPTANTE PELO SIMPLES NACIONAL"
         m = re.search(r"(N[ÃA]O\s+)?OPTANTE\s+PELO\s+SIMPLES", txt, re.I)
         info["declara_simples"] = (m.group(1) is None) if m else None
+        # tipo do documento pelo próprio conteúdo — permite escolher a NF entre
+        # vários anexos (pedido, medição, e-mail) sem depender do nome do arquivo
+        low = txt.lower()
+        info["parece_nf"] = any(k in low for k in
+                                ("nota fiscal", "danfe", "nfs-e", "nfse", "nf-e"))
         return info
 
     @staticmethod

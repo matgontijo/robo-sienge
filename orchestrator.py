@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from datetime import date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -59,6 +60,81 @@ def _parse_xml_to_nfedata(xml_str: str) -> NFeData:
         serie=serie
     )
 
+# Documentos que o pessoal cola junto da nota, mas que NÃO são nota fiscal
+_NAO_E_NOTA = ("proposta", "orcamento", "orçamento", "pedido", "medicao", "medição",
+               "contrato", "cotacao", "cotação", "planilha", "email", "e-mail",
+               "comprovante", "recibo", "ordem de compra")
+
+
+def _ler_todos_anexos(reader, anexos: dict, titulo: Titulo) -> dict:
+    """Lê a camada de texto de TODOS os anexos do título e decide qual é a nota
+    fiscal pelo CONTEÚDO — não pelo nome do arquivo nem pela ordem em que vieram.
+
+    O pessoal anexa medição, pedido, e-mail e contrato junto da nota; o primeiro
+    anexo raramente é a NF. Escolhe-se a melhor candidata por pontuação:
+      +6 tem chave de NF-e válida | +3 texto diz "nota fiscal"/"danfe"
+      +2 traz o CNPJ do credor    | +1 nome do arquivo sugere NF
+    O resultado também devolve `digitos` com o fluxo de dígitos de TODOS os
+    documentos: se o CNPJ do credor aparece em qualquer anexo, não há alarme.
+    """
+    itens = anexos.get("anexos") or []
+    if not itens:
+        return None
+
+    cnpj_raiz = re.sub(r"\D", "", str(titulo.fornecedor_cnpj or ""))[:8]
+    lidos, digitos_todos, cnpjs_todos = [], [], []
+
+    for a in itens:
+        conteudo = a.get("bytes")
+        if not conteudo:
+            continue
+        try:
+            info = reader.extrair_info_texto(conteudo)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Falha ao ler anexo {a.get('nome')}: {e}")
+            continue
+        info["_nome"] = a.get("nome")
+        info["_path"] = a.get("path")
+        info["_nf_bytes"] = conteudo
+
+        digitos_todos.append(info.get("digitos") or "")
+        cnpjs_todos.extend(info.get("cnpjs") or [])
+
+        nome_low = (a.get("nome") or "").lower()
+        pontos = 0
+        if info.get("chave"):
+            pontos += 6                      # chave de NF-e válida: é nota, sem dúvida
+        if info.get("parece_nf"):
+            pontos += 3                      # o texto se identifica como nota fiscal
+        if cnpj_raiz and cnpj_raiz in (info.get("digitos") or ""):
+            pontos += 2                      # traz o CNPJ do credor
+        if a.get("tipo") == "nf":
+            pontos += 2                      # nome do arquivo sugere NF
+        if any(k in nome_low for k in _NAO_E_NOTA):
+            pontos -= 4                      # proposta/pedido/medição não são nota
+        info["_pontos"] = pontos
+        lidos.append(info)
+
+    if not lidos:
+        return None
+
+    melhor = max(lidos, key=lambda i: i["_pontos"])
+    # dígitos e CNPJs de TODOS os anexos: o confronto de CNPJ olha o conjunto
+    melhor = dict(melhor)
+    melhor["digitos"] = "|".join(digitos_todos)
+    melhor["cnpjs"] = list(dict.fromkeys(cnpjs_todos))
+    melhor["_nf_path"] = melhor.get("_path")
+    melhor["_total_anexos"] = len(lidos)
+    # confiável se QUALQUER anexo tiver texto legível
+    melhor["tem_texto"] = any(i.get("tem_texto") for i in lidos)
+    melhor["texto_confiavel"] = any(i.get("texto_confiavel") for i in lidos)
+    logger.info(
+        f"Título {titulo.numero}: {len(lidos)} anexo(s) lidos; "
+        f"NF escolhida por conteúdo: {melhor.get('_nome')} (score {melhor['_pontos']})"
+    )
+    return melhor
+
+
 def processar_titulo(
     titulo: Titulo,
     sienge_cli: SiengeClient,
@@ -113,11 +189,22 @@ def processar_titulo(
                                  for a in anexos.get("anexos", [])],
                 }
 
-                # Camada de texto da NF anexada (sem OCR): chave de acesso e CNPJs
-                if reader is not None and anexos.get("nf_bytes"):
-                    nf_texto = reader.extrair_info_texto(anexos.get("nf_bytes"))
-                    if not titulo.chave_nfe and nf_texto.get("chave"):
-                        titulo.chave_nfe = nf_texto["chave"]
+                # Camada de texto de TODOS os anexos (sem OCR).
+                # O primeiro anexo não é necessariamente a nota: quem manda é o
+                # conteúdo. Lemos todos, escolhemos a NF de verdade e juntamos os
+                # dígitos de todos os documentos para o confronto de CNPJ.
+                if reader is not None:
+                    nf_texto = _ler_todos_anexos(reader, anexos, titulo)
+                    if nf_texto:
+                        if not titulo.chave_nfe and nf_texto.get("chave"):
+                            titulo.chave_nfe = nf_texto["chave"]
+                        # os bytes da NF escolhida vão para o título; o dicionário
+                        # não carrega PDF adiante (o ciclo guarda todos os resultados)
+                        nf_bytes = nf_texto.pop("_nf_bytes", None)
+                        if nf_bytes:
+                            titulo.attachment_bytes = nf_bytes
+                        if nf_texto.get("_nf_path"):
+                            anexos_info["nf_path"] = nf_texto["_nf_path"]
 
                 # a.1 Boleto: prioriza o anexo classificado como boleto
                 if reader is not None:
