@@ -1,13 +1,21 @@
-"""Baixa os anexos dos títulos de um ciclo e monta UMA pasta só com os
-documentos certos de cada título — a nota fiscal e o boleto, escolhidos pelo
-CONTEÚDO do arquivo (não pelo nome nem pela ordem em que vieram do Sienge).
+"""Baixa os anexos dos títulos de um ciclo e monta UMA pasta com os documentos
+de cada título. A nota fiscal e o boleto são escolhidos pelo CONTEÚDO do arquivo
+(não pelo nome nem pela ordem em que vieram do Sienge).
 
-Medições, propostas, cotações e planilhas que o pessoal cola junto ficam de fora
-da pasta final (mas continuam salvas em output/anexos/, caso precise conferir).
+Dois modos:
+
+  padrão    -> pasta output/anexos_corretos/ciclo_N com SÓ a NF e o boleto.
+               Medições, propostas, cotações e planilhas ficam de fora (mas
+               seguem salvas em output/anexos/, caso precise conferir).
+
+  --todos   -> pasta output/anexos_completos/ciclo_N com TODOS os anexos de cada
+               título, cada arquivo marcado como NF, BOLETO ou ANEXO no nome.
 
 Uso:
-    python baixar_anexos_ciclo.py            # último ciclo concluído
-    python baixar_anexos_ciclo.py 54         # um ciclo específico
+    python baixar_anexos_ciclo.py                # último ciclo, só NF + boleto
+    python baixar_anexos_ciclo.py 54             # ciclo 54, só NF + boleto
+    python baixar_anexos_ciclo.py --todos        # último ciclo, todos os anexos
+    python baixar_anexos_ciclo.py 54 --todos     # ciclo 54, todos os anexos
 """
 import csv
 import os
@@ -29,7 +37,7 @@ def _slug(s, n=28):
     return re.sub(r"[^A-Za-z0-9]+", "_", str(s or "")).strip("_")[:n] or "X"
 
 
-def main(exec_id=None):
+def main(exec_id=None, todos=False):
     if exec_id is None:
         concl = [e for e in db.get_execucoes(limit=10) if e.status == "CONCLUIDO"]
         if not concl:
@@ -42,9 +50,11 @@ def main(exec_id=None):
         logger.error(f"Ciclo #{exec_id} não tem títulos registrados.")
         return
 
-    destino = os.path.join(config.OUTPUT_DIR, "anexos_corretos", f"ciclo_{exec_id}")
+    sub = "anexos_completos" if todos else "anexos_corretos"
+    destino = os.path.join(config.OUTPUT_DIR, sub, f"ciclo_{exec_id}")
     os.makedirs(destino, exist_ok=True)
-    logger.info(f"Ciclo #{exec_id}: {len(pags)} títulos. Pasta: {destino}")
+    modo = "TODOS os anexos" if todos else "só a NF e o boleto"
+    logger.info(f"Ciclo #{exec_id}: {len(pags)} títulos ({modo}). Pasta: {destino}")
 
     cli = SiengeClient(config.SIENGE_BASE_URL, config.SIENGE_USERNAME, config.SIENGE_PASSWORD)
     rd = AttachmentReader()
@@ -85,27 +95,57 @@ def main(exec_id=None):
 
         base = f"{num}-{p.parcela or '1'}_{_slug(p.fornecedor)}"
         nomes = {"nf": "", "boleto": ""}
-        for origem, sufixo in ((nf_path, "NF"), (boleto_path, "BOLETO")):
-            if not origem or not os.path.exists(origem):
-                continue
-            alvo = os.path.join(destino, f"{base}_{sufixo}{os.path.splitext(origem)[1] or '.pdf'}")
-            try:
-                shutil.copy2(origem, alvo)
-                nomes[sufixo.lower()] = os.path.basename(alvo)
-            except OSError as e:
-                logger.warning(f"Falha ao copiar {origem}: {e}")
+        copiados = []
+
+        if todos:
+            # Todos os anexos, com o papel identificado no nome do arquivo.
+            origens = [a.get("path") for a in itens if a.get("path")]
+            for extra in (nf_path, boleto_path):
+                if extra and extra not in origens:
+                    origens.append(extra)
+            for idx, origem in enumerate(origens, start=1):
+                if not os.path.exists(origem):
+                    continue
+                papeis = [r for r, o in (("NF", nf_path), ("BOLETO", boleto_path)) if origem == o]
+                marca = "-".join(papeis) if papeis else "ANEXO"
+                nome_orig = _slug(os.path.splitext(os.path.basename(origem))[0], 30)
+                ext = os.path.splitext(origem)[1] or ".pdf"
+                alvo = os.path.join(destino, f"{base}_{idx:02d}_{marca}_{nome_orig}{ext}")
+                try:
+                    shutil.copy2(origem, alvo)
+                except OSError as e:
+                    logger.warning(f"Falha ao copiar {origem}: {e}")
+                    continue
+                copiados.append(os.path.basename(alvo))
+                if origem == nf_path and not nomes["nf"]:
+                    nomes["nf"] = os.path.basename(alvo)
+                if origem == boleto_path and not nomes["boleto"]:
+                    nomes["boleto"] = os.path.basename(alvo)
+        else:
+            for origem, sufixo in ((nf_path, "NF"), (boleto_path, "BOLETO")):
+                if not origem or not os.path.exists(origem):
+                    continue
+                alvo = os.path.join(destino, f"{base}_{sufixo}{os.path.splitext(origem)[1] or '.pdf'}")
+                try:
+                    shutil.copy2(origem, alvo)
+                    nomes[sufixo.lower()] = os.path.basename(alvo)
+                    copiados.append(os.path.basename(alvo))
+                except OSError as e:
+                    logger.warning(f"Falha ao copiar {origem}: {e}")
 
         if nomes["nf"]:
             n_nf += 1
         if nomes["boleto"]:
             n_bol += 1
 
-        descartados = [a["nome"] for a in itens
-                       if a.get("path") not in (nf_path, boleto_path)]
+        descartados = ([] if todos else
+                       [a["nome"] for a in itens
+                        if a.get("path") not in (nf_path, boleto_path)])
         linhas.append({"titulo": num, "parcela": p.parcela or "1",
                        "fornecedor": p.fornecedor or "", "anexos_no_sienge": len(itens),
                        "nota_fiscal": nomes["nf"] or "NAO IDENTIFICADA",
                        "boleto": nomes["boleto"],
+                       "copiados": " | ".join(copiados),
                        "descartados": " | ".join(descartados)})
 
         if i % 20 == 0:
@@ -115,18 +155,21 @@ def main(exec_id=None):
     with open(indice, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=["titulo", "parcela", "fornecedor",
                                           "anexos_no_sienge", "nota_fiscal",
-                                          "boleto", "descartados"])
+                                          "boleto", "copiados", "descartados"])
         w.writeheader()
         w.writerows(linhas)
 
+    total_copiados = sum(len(l["copiados"].split(" | ")) if l["copiados"] else 0 for l in linhas)
     logger.success(
-        f"CONCLUÍDO — {len(pags)} títulos | {n_nf} notas fiscais | {n_bol} boletos | "
-        f"{n_sem} sem anexo no Sienge"
+        f"CONCLUÍDO — {len(pags)} títulos | {total_copiados} arquivos copiados | "
+        f"{n_nf} notas fiscais | {n_bol} boletos | {n_sem} sem anexo no Sienge"
     )
     logger.success(f"Pasta: {destino}")
     logger.success(f"Índice: {indice}")
 
 
 if __name__ == "__main__":
-    arg = sys.argv[1] if len(sys.argv) > 1 else None
-    main(int(arg) if arg else None)
+    args = sys.argv[1:]
+    todos = "--todos" in args
+    ciclo = next((a for a in args if not a.startswith("-")), None)
+    main(int(ciclo) if ciclo else None, todos=todos)

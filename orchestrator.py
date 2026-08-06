@@ -172,23 +172,24 @@ def processar_titulo(
 
         # a. Baixar anexos (somente se já temos o ID interno e o Sienge disponível)
         if titulo.id is not None and sienge_cli is not None:
-            if from_report:
-                # Baixa TODOS os anexos, salva em pasta e prioriza NF e boleto
-                import os
-                pasta = os.path.join(
-                    config.OUTPUT_DIR, "anexos",
-                    f"{(titulo.numero or 'sem').strip()}_{(titulo.parcela or '0')}"
-                )
-                anexos = sienge_cli.baixar_anexos_titulo(titulo.id, pasta)
-                titulo.attachment_bytes = anexos.get("nf_bytes") or anexos.get("boleto_bytes")
-                anexos_info = {
-                    "pasta": pasta,
-                    "nf_path": anexos.get("nf_path"),
-                    "boleto_path": anexos.get("boleto_path"),
-                    "arquivos": [{"nome": a.get("nome"), "path": a.get("path"), "tipo": a.get("tipo")}
-                                 for a in anexos.get("anexos", [])],
-                }
+            # Baixa TODOS os anexos do título — em qualquer fluxo, com ou sem
+            # relatório — salva na pasta do título e ainda destaca NF e boleto.
+            import os
+            pasta = os.path.join(
+                config.OUTPUT_DIR, "anexos",
+                f"{str(titulo.numero or titulo.id or 'sem').strip()}_{(titulo.parcela or '0')}"
+            )
+            anexos = sienge_cli.baixar_anexos_titulo(titulo.id, pasta)
+            titulo.attachment_bytes = anexos.get("nf_bytes") or anexos.get("boleto_bytes")
+            anexos_info = {
+                "pasta": pasta,
+                "nf_path": anexos.get("nf_path"),
+                "boleto_path": anexos.get("boleto_path"),
+                "arquivos": [{"nome": a.get("nome"), "path": a.get("path"), "tipo": a.get("tipo")}
+                             for a in anexos.get("anexos", [])],
+            }
 
+            if from_report:
                 # Camada de texto de TODOS os anexos (sem OCR).
                 # O primeiro anexo não é necessariamente a nota: quem manda é o
                 # conteúdo. Lemos todos, escolhemos a NF de verdade e juntamos os
@@ -211,8 +212,6 @@ def processar_titulo(
                     bol_bytes = anexos.get("boleto_bytes") or titulo.attachment_bytes
                     if bol_bytes:
                         boleto_anexo = reader.extrair_boleto(bol_bytes)
-            else:
-                titulo.attachment_bytes = sienge_cli.baixar_anexo(titulo.id)
 
         # a.2 Dados de pagamento (anti-fraude) e retenções do título — fluxo do relatório
         if from_report and titulo.id is not None and sienge_cli is not None:
@@ -277,10 +276,14 @@ def processar_titulo(
 
 def _montar_dossie(exec_id: int, resultados: list) -> list:
     """
-    Copia, para UMA pasta única (output/dossie/ciclo_N), apenas os documentos
-    essenciais de cada título — a melhor NF e o melhor boleto identificados nos
-    anexos (medições, e-mails e planilhas coladas pelo pessoal ficam de fora) —
-    com nome padronizado. Retorna o checklist para a aba "Dossiê" do relatório.
+    Copia, para UMA pasta única (output/dossie/ciclo_N), TODOS os anexos de cada
+    título — não só a melhor NF e o melhor boleto. Cada arquivo sai com o número
+    do título no nome e a marca do papel identificado (NF, BOLETO ou ANEXO), para
+    conferência manual. Retorna o checklist da aba "Dossiê" do relatório.
+
+    A NF continua sendo a escolhida pelo CONTEÚDO (ver _ler_todos_anexos); o que
+    muda aqui é que medições, propostas e planilhas também vêm junto, em vez de
+    ficarem só em output/anexos/.
     """
     import os
     import re
@@ -304,18 +307,39 @@ def _montar_dossie(exec_id: int, resultados: list) -> list:
         boleto_esperado = "BOLETO" in forma
 
         base = f"{t.numero}-{t.parcela or '1'}_{_slug(t.fornecedor_nome)}"
+        nf_origem = info.get("nf_path")
+        boleto_origem = info.get("boleto_path")
+
+        # Todos os anexos baixados do título, na ordem em que vieram do Sienge.
+        origens = [a.get("path") for a in (info.get("arquivos") or []) if a.get("path")]
+        # NF/boleto podem ter vindo por fallback e não constar na lista — garante presença.
+        for extra in (nf_origem, boleto_origem):
+            if extra and extra not in origens:
+                origens.append(extra)
+
         arq_nf = arq_boleto = None
-        for origem, sufixo in ((info.get("nf_path"), "NF"), (info.get("boleto_path"), "BOLETO")):
-            if origem and os.path.exists(origem):
-                destino = os.path.join(pasta, f"{base}_{sufixo}{os.path.splitext(origem)[1] or '.pdf'}")
-                try:
-                    shutil.copy2(origem, destino)
-                    if sufixo == "NF":
-                        arq_nf = os.path.basename(destino)
-                    else:
-                        arq_boleto = os.path.basename(destino)
-                except OSError as e:
-                    logger.warning(f"Dossiê: falha ao copiar {origem}: {e}")
+        copiados = []
+        for i, origem in enumerate(origens, start=1):
+            if not os.path.exists(origem):
+                logger.warning(f"Dossiê: anexo não encontrado no disco: {origem}")
+                continue
+
+            papeis = [p for p, o in (("NF", nf_origem), ("BOLETO", boleto_origem)) if origem == o]
+            marca = "-".join(papeis) if papeis else "ANEXO"
+            nome_orig = _slug(os.path.splitext(os.path.basename(origem))[0], 30)
+            ext = os.path.splitext(origem)[1] or ".pdf"
+            destino = os.path.join(pasta, f"{base}_{i:02d}_{marca}_{nome_orig}{ext}")
+            try:
+                shutil.copy2(origem, destino)
+            except OSError as e:
+                logger.warning(f"Dossiê: falha ao copiar {origem}: {e}")
+                continue
+
+            copiados.append(os.path.basename(destino))
+            if origem == nf_origem and arq_nf is None:
+                arq_nf = os.path.basename(destino)
+            if origem == boleto_origem and arq_boleto is None:
+                arq_boleto = os.path.basename(destino)
 
         status_nf = "✓" if arq_nf else ("FALTA" if nf_esperada else "n/a")
         status_boleto = ("✓" if arq_boleto else "FALTA") if boleto_esperado else "n/a"
@@ -324,10 +348,13 @@ def _montar_dossie(exec_id: int, resultados: list) -> list:
             "tipo_doc": t.tipo_documento, "forma": forma.title() if forma else "",
             "nf": status_nf, "boleto": status_boleto,
             "arq_nf": arq_nf, "arq_boleto": arq_boleto,
+            "arquivos": copiados,
+            "total_copiados": len(copiados),
             "total_anexos": len(info.get("arquivos") or []),
         })
     logger.success(f"Dossiê montado em {pasta}: "
-                   f"{sum(1 for x in rows if x['arq_nf'] or x['arq_boleto'])} títulos com documentos, "
+                   f"{sum(x['total_copiados'] for x in rows)} arquivos de "
+                   f"{sum(1 for x in rows if x['total_copiados'])} títulos, "
                    f"{sum(1 for x in rows if x['nf'] == 'FALTA')} sem NF, "
                    f"{sum(1 for x in rows if x['boleto'] == 'FALTA')} sem boleto.")
     return rows

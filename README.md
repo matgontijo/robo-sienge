@@ -77,6 +77,35 @@ O relatório contém 3 abas:
 - **Conferidos OK**: Títulos que passaram 100% no cruzamento (valores batem, DDA confere).
 - **Não Processados**: Títulos onde ocorreu uma falha técnica fatal no processamento (ex: API fora do ar na hora da consulta daquele título específico).
 
+## Anexos
+
+Cada ciclo baixa **todos** os anexos de cada título para `output/anexos/<titulo>_<parcela>/`
+e copia **todos eles** para o dossiê do ciclo, em `output/dossie/ciclo_N/`. Os arquivos
+saem com o papel identificado no nome:
+
+```
+8674-1_Construtora_Exemplo_01_NF_danfe_nota.pdf
+8674-1_Construtora_Exemplo_02_BOLETO_boleto_cobranca.pdf
+8674-1_Construtora_Exemplo_03_ANEXO_medicao_obra.pdf
+```
+
+A nota fiscal é escolhida pelo **conteúdo** do arquivo, não pelo nome nem pela ordem
+em que veio do Sienge. A aba **Dossiê** do Excel lista, por título, quantos arquivos
+foram copiados e os nomes de todos eles.
+
+Para montar a pasta de um ciclo já concluído, sem rodar tudo de novo:
+
+```bash
+python baixar_anexos_ciclo.py            # último ciclo, só a NF e o boleto
+python baixar_anexos_ciclo.py 54         # ciclo 54, só a NF e o boleto
+python baixar_anexos_ciclo.py --todos    # último ciclo, TODOS os anexos
+python baixar_anexos_ciclo.py 54 --todos # ciclo 54, TODOS os anexos
+```
+
+O modo padrão grava em `output/anexos_corretos/ciclo_N/`; o `--todos`, em
+`output/anexos_completos/ciclo_N/`. Os dois geram um `_indice.csv` com o que foi
+copiado e o que ficou de fora.
+
 ## Painel Web
 
 ### Iniciar
