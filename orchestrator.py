@@ -11,7 +11,7 @@ import config
 from models import Titulo, NFeData, Boleto
 from modules.sienge_client import SiengeClient
 from modules.report_parser import ReportParser
-from modules.attachment_reader import AttachmentReader
+from modules.attachment_reader import AttachmentReader, decodificar_linha_digitavel
 from modules.receita_client import ReceitaClient
 from modules.sefaz_client import SefazClient
 from modules.danfe_generator import DanfeGenerator
@@ -96,6 +96,9 @@ def _ler_todos_anexos(reader, anexos: dict, titulo: Titulo) -> dict:
         info["_nome"] = a.get("nome")
         info["_path"] = a.get("path")
         info["_nf_bytes"] = conteudo
+        # guarda a linha digitável no próprio anexo: _boleto_da_parcela reaproveita
+        # em vez de abrir o PDF de novo (pdfplumber é caro)
+        a["_linha_digitavel"] = info.get("linha_digitavel")
 
         digitos_todos.append(info.get("digitos") or "")
         cnpjs_todos.extend(info.get("cnpjs") or [])
@@ -135,6 +138,93 @@ def _ler_todos_anexos(reader, anexos: dict, titulo: Titulo) -> dict:
     return melhor
 
 
+def _boleto_da_parcela(reader, anexos: dict, titulo: Titulo, info_pagamento) -> dict:
+    """Entre os anexos do título, escolhe o boleto que pertence À PARCELA do ciclo.
+
+    O anexo no Sienge fica preso ao TÍTULO, não à parcela: um título em 12x traz
+    os 12 boletos no mesmo pacote. A parcela então é identificada pelo próprio
+    documento, do critério mais forte para o mais fraco:
+
+      1. linha digitável do anexo == a cadastrada naquela parcela  (exato)
+      2. vencimento e valor decodificados da linha == os da parcela (FEBRABAN)
+      3. só o vencimento bate, e é o único anexo com aquele vencimento
+      4. só existe um boleto anexado — não há o que confundir (não confirmado)
+
+    Devolve um dicionário com `situacao`:
+      identificado -> achou o boleto desta parcela (path preenchido)
+      sem_boleto   -> não há boleto entre os anexos (Pix/TED, por exemplo): não
+                      há o que desambiguar, o dossiê leva só a nota
+      ambiguo      -> há boletos, mas nenhum pôde ser atribuído à parcela; o
+                      dossiê leva TODOS os anexos e marca para conferência
+    Devolve None quando nem dá para avaliar (sem anexos ou sem leitor).
+    """
+    itens = (anexos or {}).get("anexos") or []
+    if not itens or reader is None:
+        return None
+
+    linha_parcela = re.sub(r"\D", "", str(getattr(info_pagamento, "linha_digitavel", "") or ""))
+    venc_parcela = getattr(info_pagamento, "vencimento", None) or titulo.data_vencimento
+    valor_parcela = (getattr(info_pagamento, "valor", None)
+                     or titulo.valor_liquido or titulo.valor_nominal)
+
+    candidatos = []
+    for a in itens:
+        linha = a.get("_linha_digitavel")
+        if linha is None and a.get("bytes"):
+            # anexo não passou por _ler_todos_anexos (fluxo sem relatório)
+            try:
+                linha = (reader.extrair_info_texto(a["bytes"]) or {}).get("linha_digitavel")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Falha ao ler {a.get('nome')} procurando o boleto: {e}")
+                linha = None
+        linha = re.sub(r"\D", "", str(linha or ""))
+        if not linha:
+            continue
+        dec = decodificar_linha_digitavel(linha) or {}
+        candidatos.append({"path": a.get("path"), "nome": a.get("nome"), "linha": linha,
+                           "venc": dec.get("vencimento"), "valor": dec.get("valor")})
+
+    if not candidatos:
+        logger.info(f"Título {titulo.numero}/{titulo.parcela}: nenhum boleto entre os anexos.")
+        return {"situacao": "sem_boleto", "path": None, "nome": None,
+                "criterio": "nenhum boleto anexado", "confiavel": True, "candidatos": 0}
+
+    def _achado(c, criterio, confiavel=True):
+        logger.info(f"Título {titulo.numero}/{titulo.parcela}: boleto da parcela = "
+                    f"{c['nome']} (por {criterio})")
+        return {"situacao": "identificado", "path": c["path"], "nome": c["nome"],
+                "criterio": criterio, "confiavel": confiavel, "candidatos": len(candidatos)}
+
+    # 1) linha digitável idêntica à cadastrada na parcela
+    if linha_parcela:
+        for c in candidatos:
+            if c["linha"] == linha_parcela:
+                return _achado(c, "linha digitável da parcela")
+
+    # 2) vencimento + valor decodificados da própria linha digitável
+    if venc_parcela and valor_parcela:
+        for c in candidatos:
+            if (c["venc"] == venc_parcela and c["valor"]
+                    and abs(c["valor"] - float(valor_parcela)) <= 0.02):
+                return _achado(c, "vencimento e valor do boleto")
+
+    # 3) só o vencimento, e desde que não haja empate
+    if venc_parcela:
+        mesmo_venc = [c for c in candidatos if c["venc"] == venc_parcela]
+        if len(mesmo_venc) == 1:
+            return _achado(mesmo_venc[0], "vencimento do boleto")
+
+    # 4) um único boleto anexado: não dá para confundir, mas nada confirma a parcela
+    if len(candidatos) == 1:
+        return _achado(candidatos[0], "único boleto anexado", confiavel=False)
+
+    logger.warning(f"Título {titulo.numero}/{titulo.parcela}: {len(candidatos)} boletos anexados "
+                   f"e nenhum pôde ser atribuído à parcela — dossiê levará todos.")
+    return {"situacao": "ambiguo", "path": None, "nome": None,
+            "criterio": f"{len(candidatos)} boletos, nenhum atribuível à parcela",
+            "confiavel": False, "candidatos": len(candidatos)}
+
+
 def processar_titulo(
     titulo: Titulo,
     sienge_cli: SiengeClient,
@@ -161,6 +251,7 @@ def processar_titulo(
     retencoes = {}
     destacados = {}
     nfe_data = None
+    anexos = None
     anexos_info = None
     nf_texto = None
     try:
@@ -220,6 +311,14 @@ def processar_titulo(
                 titulo.forma_pagamento = info_pagamento.forma_pagamento
             retencoes = sienge_cli.consultar_impostos_titulo(titulo.id) or {}
 
+        # a.2.1 Qual dos boletos anexados é o DESTA parcela. Só dá para decidir
+        # aqui: a linha digitável cadastrada vem do info_pagamento, acima.
+        if anexos_info is not None and anexos:
+            escolha = _boleto_da_parcela(reader, anexos, titulo, info_pagamento)
+            anexos_info["boleto_parcela"] = escolha
+            if escolha:
+                anexos_info["boleto_path"] = escolha["path"]
+
         # a.3 CNPJ do credor cadastrado no título (/creditors) — referência oficial
         # para o confronto do destino do pagamento (TED/Pix) x credor
         if from_report and sienge_cli is not None and titulo.credor_id and not titulo.fornecedor_cnpj:
@@ -276,14 +375,14 @@ def processar_titulo(
 
 def _montar_dossie(exec_id: int, resultados: list) -> list:
     """
-    Copia, para UMA pasta única (output/dossie/ciclo_N), TODOS os anexos de cada
-    título — não só a melhor NF e o melhor boleto. Cada arquivo sai com o número
-    do título no nome e a marca do papel identificado (NF, BOLETO ou ANEXO), para
-    conferência manual. Retorna o checklist da aba "Dossiê" do relatório.
+    Copia, para UMA pasta única (output/dossie/ciclo_N), os documentos DA PARCELA
+    que está sendo paga: a nota fiscal (escolhida pelo conteúdo) e o boleto
+    daquela parcela (ver _boleto_da_parcela). Boletos das outras parcelas,
+    medições e planilhas ficam de fora — seguem salvos em output/anexos/.
 
-    A NF continua sendo a escolhida pelo CONTEÚDO (ver _ler_todos_anexos); o que
-    muda aqui é que medições, propostas e planilhas também vêm junto, em vez de
-    ficarem só em output/anexos/.
+    Exceção: quando há boletos anexados mas nenhum pôde ser atribuído à parcela,
+    o título leva TODOS os anexos e é marcado como "CONFERIR" no checklist — é
+    preferível ver documento a mais do que ficar sem o certo.
     """
     import os
     import re
@@ -308,14 +407,21 @@ def _montar_dossie(exec_id: int, resultados: list) -> list:
 
         base = f"{t.numero}-{t.parcela or '1'}_{_slug(t.fornecedor_nome)}"
         nf_origem = info.get("nf_path")
-        boleto_origem = info.get("boleto_path")
+        escolha = info.get("boleto_parcela") or {}
+        situacao = escolha.get("situacao")
+        ambiguo = situacao in (None, "ambiguo")   # None = nem deu para avaliar
+        boleto_origem = escolha.get("path") if situacao == "identificado" else (
+            None if situacao == "sem_boleto" else info.get("boleto_path"))
 
-        # Todos os anexos baixados do título, na ordem em que vieram do Sienge.
-        origens = [a.get("path") for a in (info.get("arquivos") or []) if a.get("path")]
-        # NF/boleto podem ter vindo por fallback e não constar na lista — garante presença.
-        for extra in (nf_origem, boleto_origem):
-            if extra and extra not in origens:
-                origens.append(extra)
+        if ambiguo:
+            # Não deu para dizer qual boleto é o desta parcela: leva tudo.
+            origens = [a.get("path") for a in (info.get("arquivos") or []) if a.get("path")]
+            for extra in (nf_origem, boleto_origem):
+                if extra and extra not in origens:
+                    origens.append(extra)
+        else:
+            # Só os documentos DESTA parcela.
+            origens = [o for o in (nf_origem, boleto_origem) if o]
 
         arq_nf = arq_boleto = None
         copiados = []
@@ -342,12 +448,18 @@ def _montar_dossie(exec_id: int, resultados: list) -> list:
                 arq_boleto = os.path.basename(destino)
 
         status_nf = "✓" if arq_nf else ("FALTA" if nf_esperada else "n/a")
-        status_boleto = ("✓" if arq_boleto else "FALTA") if boleto_esperado else "n/a"
+        if ambiguo and (info.get("arquivos") or []):
+            status_boleto = "CONFERIR"          # levou tudo; a parcela não foi identificada
+        elif boleto_esperado:
+            status_boleto = "✓" if arq_boleto else "FALTA"
+        else:
+            status_boleto = "n/a"
         rows.append({
             "numero": t.numero, "parcela": t.parcela, "fornecedor": t.fornecedor_nome,
             "tipo_doc": t.tipo_documento, "forma": forma.title() if forma else "",
             "nf": status_nf, "boleto": status_boleto,
             "arq_nf": arq_nf, "arq_boleto": arq_boleto,
+            "boleto_criterio": escolha.get("criterio") or "",
             "arquivos": copiados,
             "total_copiados": len(copiados),
             "total_anexos": len(info.get("arquivos") or []),
@@ -356,7 +468,8 @@ def _montar_dossie(exec_id: int, resultados: list) -> list:
                    f"{sum(x['total_copiados'] for x in rows)} arquivos de "
                    f"{sum(1 for x in rows if x['total_copiados'])} títulos, "
                    f"{sum(1 for x in rows if x['nf'] == 'FALTA')} sem NF, "
-                   f"{sum(1 for x in rows if x['boleto'] == 'FALTA')} sem boleto.")
+                   f"{sum(1 for x in rows if x['boleto'] == 'FALTA')} sem boleto, "
+                   f"{sum(1 for x in rows if x['boleto'] == 'CONFERIR')} com parcela não identificada.")
     return rows
 
 def executar_ciclo(data_inicio: date = None, data_fim: date = None, iniciado_por: str = "scheduler", relatorio_path: str = None) -> int:

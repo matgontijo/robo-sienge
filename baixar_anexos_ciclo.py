@@ -4,9 +4,14 @@ de cada título. A nota fiscal e o boleto são escolhidos pelo CONTEÚDO do arqu
 
 Dois modos:
 
-  padrão    -> pasta output/anexos_corretos/ciclo_N com SÓ a NF e o boleto.
-               Medições, propostas, cotações e planilhas ficam de fora (mas
-               seguem salvas em output/anexos/, caso precise conferir).
+  padrão    -> pasta output/anexos_corretos/ciclo_N com SÓ a NF e o boleto DA
+               PARCELA que está sendo paga. Como o anexo no Sienge fica preso ao
+               título, um título em 12x traz os 12 boletos juntos: o boleto certo
+               é escolhido cruzando linha digitável / vencimento / valor da
+               parcela. Medições, propostas e boletos das outras parcelas ficam
+               de fora (seguem salvos em output/anexos/).
+               Quando a parcela não pôde ser identificada, o título leva TODOS os
+               anexos e sai marcado como CONFERIR no _indice.csv.
 
   --todos   -> pasta output/anexos_completos/ciclo_N com TODOS os anexos de cada
                título, cada arquivo marcado como NF, BOLETO ou ANEXO no nome.
@@ -27,14 +32,27 @@ from loguru import logger
 
 import config
 from models import Titulo
+from models.info_pagamento import InfoPagamento
 from modules.attachment_reader import AttachmentReader
 from modules.sienge_client import SiengeClient
-from orchestrator import _ler_todos_anexos
+from orchestrator import _ler_todos_anexos, _boleto_da_parcela
 from dashboard import database as db
 
 
 def _slug(s, n=28):
     return re.sub(r"[^A-Za-z0-9]+", "_", str(s or "")).strip("_")[:n] or "X"
+
+
+def _data(valor):
+    """Vencimento vem como texto do banco; devolve date ou None."""
+    from datetime import date, datetime
+    if isinstance(valor, date):
+        return valor
+    txt = str(valor or "")[:10]
+    try:
+        return datetime.strptime(txt, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def main(exec_id=None, todos=False):
@@ -72,10 +90,11 @@ def main(exec_id=None, todos=False):
             continue
 
         cnpj = re.sub(r"\D", "", str(p.cnpj_credor or ""))
+        venc = _data(p.vencimento)
         t = Titulo(id=titulo_id, numero=num, parcela=str(p.parcela or "1"),
                    fornecedor_nome=p.fornecedor or "", fornecedor_cnpj=cnpj,
-                   valor_nominal=0.0, valor_liquido=0.0, data_vencimento=None,
-                   forma_pagamento=p.forma, status=None)
+                   valor_nominal=p.valor or 0.0, valor_liquido=p.valor or 0.0,
+                   data_vencimento=venc, forma_pagamento=p.forma, status=None)
 
         pasta_bruta = os.path.join(config.OUTPUT_DIR, "anexos", f"{num}_{p.parcela or '1'}")
         anexos = cli.baixar_anexos_titulo(titulo_id, pasta_bruta)
@@ -91,13 +110,23 @@ def main(exec_id=None, todos=False):
         # a nota certa, escolhida pelo conteúdo
         escolhido = _ler_todos_anexos(rd, anexos, t)
         nf_path = (escolhido or {}).get("_nf_path") or anexos.get("nf_path")
-        boleto_path = anexos.get("boleto_path")
+
+        # o boleto DESTA parcela: o anexo fica preso ao título, então cruzamos com
+        # a linha digitável / vencimento / valor cadastrados na parcela
+        info = InfoPagamento(parcela=str(p.parcela or "") or None, valor=p.valor,
+                             vencimento=venc, linha_digitavel=p.linha_digitavel)
+        sel = _boleto_da_parcela(rd, anexos, t, info) or {}
+        situacao = sel.get("situacao")
+        criterio = sel.get("criterio") or "nao avaliado"
+        boleto_path = sel.get("path") if situacao == "identificado" else None
+        # Sem conseguir atribuir o boleto à parcela: leva todos e sinaliza.
+        ambiguo = situacao in (None, "ambiguo")
 
         base = f"{num}-{p.parcela or '1'}_{_slug(p.fornecedor)}"
         nomes = {"nf": "", "boleto": ""}
         copiados = []
 
-        if todos:
+        if todos or ambiguo:
             # Todos os anexos, com o papel identificado no nome do arquivo.
             origens = [a.get("path") for a in itens if a.get("path")]
             for extra in (nf_path, boleto_path):
@@ -138,13 +167,14 @@ def main(exec_id=None, todos=False):
         if nomes["boleto"]:
             n_bol += 1
 
-        descartados = ([] if todos else
+        descartados = ([] if (todos or ambiguo) else
                        [a["nome"] for a in itens
                         if a.get("path") not in (nf_path, boleto_path)])
         linhas.append({"titulo": num, "parcela": p.parcela or "1",
                        "fornecedor": p.fornecedor or "", "anexos_no_sienge": len(itens),
                        "nota_fiscal": nomes["nf"] or "NAO IDENTIFICADA",
-                       "boleto": nomes["boleto"],
+                       "boleto": nomes["boleto"] or ("CONFERIR" if ambiguo else ""),
+                       "como_achou_o_boleto": criterio,
                        "copiados": " | ".join(copiados),
                        "descartados": " | ".join(descartados)})
 
@@ -155,7 +185,8 @@ def main(exec_id=None, todos=False):
     with open(indice, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=["titulo", "parcela", "fornecedor",
                                           "anexos_no_sienge", "nota_fiscal",
-                                          "boleto", "copiados", "descartados"])
+                                          "boleto", "como_achou_o_boleto",
+                                          "copiados", "descartados"])
         w.writeheader()
         w.writerows(linhas)
 

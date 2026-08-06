@@ -79,32 +79,42 @@ O relatório contém 3 abas:
 
 ## Anexos
 
-Cada ciclo baixa **todos** os anexos de cada título para `output/anexos/<titulo>_<parcela>/`
-e copia **todos eles** para o dossiê do ciclo, em `output/dossie/ciclo_N/`. Os arquivos
-saem com o papel identificado no nome:
+Cada ciclo baixa **todos** os anexos de cada título para `output/anexos/<titulo>_<parcela>/`.
+Já o dossiê do ciclo (`output/dossie/ciclo_N/`) leva só os documentos **da parcela
+que está sendo paga**: a nota fiscal e o boleto daquela parcela.
 
-```
-8674-1_Construtora_Exemplo_01_NF_danfe_nota.pdf
-8674-1_Construtora_Exemplo_02_BOLETO_boleto_cobranca.pdf
-8674-1_Construtora_Exemplo_03_ANEXO_medicao_obra.pdf
-```
+### Por que isso não é trivial
 
-A nota fiscal é escolhida pelo **conteúdo** do arquivo, não pelo nome nem pela ordem
-em que veio do Sienge. A aba **Dossiê** do Excel lista, por título, quantos arquivos
-foram copiados e os nomes de todos eles.
+No Sienge o anexo fica preso ao **título**, não à parcela — um título em 12x traz
+os 12 boletos no mesmo pacote. O robô identifica a parcela pelo próprio documento,
+do critério mais forte para o mais fraco:
 
-Para montar a pasta de um ciclo já concluído, sem rodar tudo de novo:
+1. **linha digitável do anexo == a cadastrada na parcela** (exato)
+2. **vencimento e valor** decodificados da linha digitável batem com os da parcela
+   (padrão FEBRABAN, determinístico, sem OCR)
+3. só o **vencimento** bate, e nenhum outro anexo tem o mesmo vencimento
+4. só existe **um boleto** anexado — entra, mas marcado como não confirmado
+
+Quando há boletos e nenhum pôde ser atribuído à parcela, o título leva **todos**
+os anexos e sai como **CONFERIR** na aba Dossiê: é preferível ver documento a mais
+do que ficar sem o certo. Título sem boleto nenhum (Pix/TED) leva só a nota.
+
+A nota fiscal é escolhida pelo **conteúdo** do arquivo, não pelo nome nem pela
+ordem em que veio do Sienge. A aba **Dossiê** do Excel mostra, por título, como o
+boleto da parcela foi encontrado e quais arquivos foram copiados.
+
+### Remontar a pasta de um ciclo já concluído
 
 ```bash
-python baixar_anexos_ciclo.py            # último ciclo, só a NF e o boleto
-python baixar_anexos_ciclo.py 54         # ciclo 54, só a NF e o boleto
+python baixar_anexos_ciclo.py            # último ciclo, só NF + boleto da parcela
+python baixar_anexos_ciclo.py 54         # ciclo 54, só NF + boleto da parcela
 python baixar_anexos_ciclo.py --todos    # último ciclo, TODOS os anexos
 python baixar_anexos_ciclo.py 54 --todos # ciclo 54, TODOS os anexos
 ```
 
 O modo padrão grava em `output/anexos_corretos/ciclo_N/`; o `--todos`, em
 `output/anexos_completos/ciclo_N/`. Os dois geram um `_indice.csv` com o que foi
-copiado e o que ficou de fora.
+copiado, por qual critério o boleto foi escolhido e o que ficou de fora.
 
 ## Painel Web
 
