@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 .env
 dashboard.db
+dashboard.db-journal
+dashboard.db-wal
+dashboard.db-shm
 output/
 logs/
 certs/

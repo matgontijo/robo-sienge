@@ -24,12 +24,8 @@ services:
           property: connectionString
       - key: PYTHON_VERSION
         value: "3.12.4"
-      - key: DASHBOARD_AUTH
-        value: "1"                # painel público: EXIGE login (protege os dados)
-      # --- Segredos: preencher no painel do Render (Environment). NUNCA versionar. ---
-      - key: DASHBOARD_USER
-        sync: false
-      - key: DASHBOARD_PASSWORD
-        sync: false
+      # ATENÇÃO: o painel NÃO tem mais login. Publicar na nuvem deixa os dados
+      # financeiros abertos a qualquer pessoa com a URL — se voltar a usar o
+      # Render, proteja o serviço por fora (ex.: Cloudflare Access / IP allowlist).
       # SIENGE/GEMINI só são necessários se um dia o ciclo rodar na nuvem;
       # como o ciclo fica local, o painel na nuvem NÃO precisa deles.

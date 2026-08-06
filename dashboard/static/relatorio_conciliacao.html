@@ -166,9 +166,7 @@
             "VENCIMENTO_DIVERGENTE": "🟡 Vencimento divergente",
         };
         const sub = document.getElementById("res-sub");
-        const tok = sessionStorage.getItem("auth_token");
-        if (!tok) { sub.textContent = "Faça login no painel para ver os números do último ciclo."; return; }
-        const H = { headers: { "Authorization": "Basic " + tok } };
+        const H = {}; // painel sem login — as rotas são abertas no uso local
         try {
             const execs = await (await fetch("/api/execucoes?limit=10", H)).json();
             const done = (execs || []).filter(e => e.status === "CONCLUIDO");
@@ -221,7 +219,7 @@
             }
             document.getElementById("res-detalhe").style.display = "";
         } catch (err) {
-            sub.textContent = "Não foi possível carregar os resultados (verifique o login no painel).";
+            sub.textContent = "Não foi possível carregar os resultados (o painel está no ar?).";
         }
     })();
     </script>

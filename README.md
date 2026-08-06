@@ -89,8 +89,10 @@ python main.py dashboard
 python main.py full
 ```
 
-Acesse: http://localhost:8000
-Usuário e senha: configurados no `.env` (`DASHBOARD_USER` / `DASHBOARD_PASSWORD`)
+Acesse: http://localhost:8000 — **sem login** (ferramenta de uso local, entra direto).
+
+> Por isso, **não publique este painel na internet sem proteção**: os dados de
+> contas a pagar ficariam abertos a qualquer pessoa com a URL.
 
 ### Funcionalidades
 
