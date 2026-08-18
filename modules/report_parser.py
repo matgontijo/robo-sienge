@@ -294,6 +294,14 @@ class ReportParser:
                 if texto:
                     textos_paginas.append(texto)
 
+        texto_total = chr(10).join(textos_paginas)
+
+        # O relatorio "Contas a Pagar (por Data de Vencimento)" tem estrutura propria
+        # (blocos credor/documento/lancamento) e nao segue o layout do Fluxo de Caixa.
+        if self._e_contas_a_pagar(texto_total):
+            logger.info("PDF identificado como 'Contas a Pagar (por Data de Vencimento)'.")
+            return self._parse_contas_a_pagar(texto_total)
+
         if tabelas_titulos:
             logger.success(f"Relatório PDF (tabela): {len(tabelas_titulos)} títulos conferíveis.")
             return tabelas_titulos
@@ -428,4 +436,67 @@ class ReportParser:
         logger.success(
             f"Relatório PDF (texto): {total} linhas lógicas | {validas} conferíveis | {ignoradas} ignoradas."
         )
+        return titulos
+
+    # ------------------------------------------------------------------
+    # Relatorio "Contas a Pagar (por Data de Vencimento)"
+    # Estrutura diferente do Fluxo de Caixa: os registros vem em blocos
+    #   CREDOR (1+ linhas) / DOCUMENTO (1-2 linhas) / LANCAMENTO (nnn/p)
+    #   Qt / Ind / Dias / Valor no vencto / Acrescimo / Desconto / Total
+    # agrupados sob "Data de vencimento DD/MM/AAAA".
+    # ------------------------------------------------------------------
+    _RE_LANC = re.compile(r"^\d+/\d+$")
+    _RE_DATA_VENC = re.compile(r"Data de vencimento\s*(\d{2}/\d{2}/\d{4})", re.I)
+    _RE_MOEDA = re.compile(r"^-?[\d.]+,\d{2}$")
+    _RE_INT = re.compile(r"^\d+$")
+
+    @classmethod
+    def _e_contas_a_pagar(cls, texto: str) -> bool:
+        return "contas a pagar" in _normalizar(texto)[:400]
+
+    def _parse_contas_a_pagar(self, texto: str) -> List[Titulo]:
+        """Cada registro vem numa linha unica:
+            CREDOR  DOCUMENTO  LANCAMENTO  Qt Ind Dias  Valor  Acrescimo  Desconto  Total
+        com o nome do credor podendo continuar na linha seguinte. O valor usado e o
+        TOTAL (ja com acrescimo/desconto aplicados)."""
+        re_reg = re.compile(
+            r"^(?P<pre>.+?)\s+(?P<lanc>\d+/\d+)\s+\d+\s+\d+\s+\d+\s+"
+            r"(?P<v1>[\d.]+,\d{2})\s+(?P<v2>[\d.]+,\d{2})\s+"
+            r"(?P<v3>[\d.]+,\d{2})\s+(?P<tot>[\d.]+,\d{2})\s*$")
+        re_doc = re.compile("(?:^|[ ])(NFSE|NFE|NF|DARF|ADTF|DARJ|GARE|GPS|FGTS)(?![A-Za-z])[.]?", re.I)
+
+        titulos: List[Titulo] = []
+        venc_atual: Optional[date] = None
+        ignorados = 0
+        for linha in [l.strip() for l in texto.splitlines() if l.strip()]:
+            m = self._RE_DATA_VENC.search(linha)
+            if m:
+                venc_atual = self._parse_data(m.group(1))
+                continue
+            if linha.lower().startswith("obs:") or self._is_total_ou_cabecalho([linha]):
+                continue
+            r = re_reg.match(linha)
+            if not r:
+                # continuacao do nome do credor da linha anterior
+                LIXO = ("vencto", "credor", "documento", "total", "obs")
+                if (titulos and not re.search(r"\d", linha) and 3 < len(linha) < 60
+                        and linha.lower() not in LIXO):
+                    t = titulos[-1]
+                    t.fornecedor_nome = f"{t.fornecedor_nome} {linha}".strip()
+                continue
+            pre = r.group("pre").strip()
+            md = re_doc.search(pre)
+            if md:
+                fornecedor, documento = pre[:md.start()].strip(), pre[md.start():].strip()
+            else:
+                fornecedor, documento = pre, ""
+            total = self._parse_valor_br(r.group("tot"))
+            if total <= 0:
+                ignorados += 1
+                continue
+            titulos.append(self._montar_titulo(
+                venc_atual, documento, r.group("lanc"), None, fornecedor, total))
+        logger.success(
+            f"Relatorio 'Contas a Pagar': {len(titulos)} titulos conferiveis"
+            + (f" | {ignorados} sem valor ignorados" if ignorados else ""))
         return titulos
