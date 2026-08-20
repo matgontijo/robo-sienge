@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apropriação dos impostos · Robô de Conferência</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=21">
+<style>
+  body { overflow: auto; }
+  .ap-wrap { max-width: 1240px; margin: 0 auto; padding: 22px 18px 60px; width: 100%; }
+  .ap-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  .ap-top h1 { font-size: 22px; letter-spacing: -.3px; }
+  .ap-top p { color: var(--muted); font-size: 13px; margin-top: 4px; max-width: 720px; }
+  .ap-acoes { display: flex; gap: 8px; align-items: center; }
+  .bt-prim { padding: 10px 16px; border-radius: 10px; border: 0; background: var(--accent); color: #04110f; font-weight: 800; font-size: 13.5px; cursor: pointer; }
+  .bt-prim:hover { background: var(--accent-2); box-shadow: var(--glow); }
+  .bt-prim:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+  .bt-sec { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line-2); background: rgba(255,255,255,.04); color: var(--ink); font-weight: 700; font-size: 13px; cursor: pointer; }
+  .bt-sec:hover { background: var(--card-2); }
+  .bt-sec:disabled { opacity: .4; cursor: not-allowed; }
+  .bt-min { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+  .bt-min:hover { color: var(--ink); border-color: var(--line-2); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .kpi small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; }
+  .kpi b { display: block; font-size: 22px; margin-top: 4px; letter-spacing: -.3px; }
+  .kpi.ok b { color: var(--ok); } .kpi.pend b { color: var(--warn); }
+
+  .aviso { border-radius: 12px; padding: 12px 14px; font-size: 13px; margin-bottom: 14px; display: none; }
+  .aviso.show { display: block; }
+  .aviso.crit { background: var(--crit-bg); color: #fecaca; border: 1px solid rgba(248,113,113,.35); }
+  .aviso.ok { background: var(--ok-bg); color: #a7f3d0; border: 1px solid rgba(52,211,153,.35); }
+
+  .lista { display: flex; flex-direction: column; gap: 10px; }
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(240px, 1.4fr) 28px minmax(260px, 1.6fr) auto; gap: 14px; align-items: center; transition: border-color .15s; }
+  .item:hover { border-color: var(--line-2); }
+  .item.corrigido { border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.04); }
+  .item.parcial { border-color: rgba(251,191,36,.4); }
+  .item.erro { border-color: rgba(248,113,113,.4); }
+  .it-id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .it-doc { font-weight: 800; font-size: 14px; margin: 2px 0; }
+  .it-val { font-family: var(--mono); font-size: 13px; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--ink); margin-right: 4px; letter-spacing: .3px; }
+  .tag.trib { background: var(--info-bg); color: var(--info); }
+  .de, .para { font-size: 12.5px; line-height: 1.45; }
+  .de small, .para small { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; margin-bottom: 2px; }
+  .de { color: #fca5a5; } .item.corrigido .de { color: var(--muted); text-decoration: line-through; }
+  .para { color: #a7f3d0; }
+  .seta { text-align: center; color: var(--muted); font-size: 18px; }
+  .para select { margin-top: 4px; width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--ink); font-size: 12px; }
+  .para select option { background: #131416; }
+  .rateio { margin-top: 6px; max-height: 150px; overflow: auto; font-size: 11.5px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .rateio div { display: flex; gap: 8px; padding: 1px 0; } .rateio span { font-family: var(--mono); min-width: 54px; color: var(--accent-2); }
+  .rateio small { color: var(--muted); } .rateio-cc { color: var(--muted); border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 3px; }
+  .it-ac { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 140px; }
+  .st { font-size: 11px; font-weight: 800; text-align: center; padding: 4px 8px; border-radius: 999px; }
+  .st.pendente { background: var(--warn-bg); color: var(--warn); }
+  .st.corrigido { background: var(--ok-bg); color: var(--ok); }
+  .st.parcial { background: var(--warn-bg); color: var(--warn); }
+  .st.erro { background: var(--crit-bg); color: var(--crit); }
+  .it-av { grid-column: 1 / -1; font-size: 12px; color: var(--warn); padding-top: 6px; border-top: 1px dashed var(--line); }
+  .it-res { grid-column: 1 / -1; font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: pre-wrap; }
+
+  .manual { margin-top: 26px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .manual h2 { font-size: 14px; margin-bottom: 8px; }
+  .manual li { font-size: 13px; color: var(--ink); margin: 6px 0 6px 18px; }
+  .manual li b { font-family: var(--mono); color: var(--accent-2); font-weight: 600; }
+  .rodape { margin-top: 18px; color: var(--muted); font-size: 12px; }
+  @media (max-width: 860px) { .item { grid-template-columns: 1fr; } .seta { display: none; } }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="logo"><span class="mark">🧾</span>
+    <span class="logo-t"><b>Apropriação dos impostos</b><small>Grupo Garden</small></span>
+  </div>
+  <span style="flex:1"></span>
+  <a class="bt-sec" href="/" style="text-decoration:none">🤖 Agente</a>
+  <a class="bt-sec" href="/conferencia" style="text-decoration:none">🛡️ Conferência</a>
+</header>
+
+<main class="ap-wrap">
+  <div class="ap-top">
+    <div>
+      <h1>Apropriação das guias de retenção (INSS · CSRF · IRRF · ISS)</h1>
+      <p id="sub">O destino de cada guia pode ser o <b>rateio pelas NFs de origem</b> (a retenção segue a nota que a gerou — obra, unidade e
+        planilha de cada NF) ou uma planilha única, como a equipe costuma lançar. O estado "Está em" é lido ao vivo do Sienge.</p>
+    </div>
+    <div class="ap-acoes">
+      <button class="bt-sec" id="bt-atualizar">↻ Reler do Sienge</button>
+      <button class="bt-prim" id="bt-todos">Corrigir todos os pendentes</button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi pend"><small>Pendentes</small><b id="k-pend">—</b></div>
+    <div class="kpi ok"><small>Corrigidos</small><b id="k-ok">—</b></div>
+    <div class="kpi"><small>Valor a corrigir</small><b id="k-val">—</b></div>
+    <div class="kpi"><small>Última leitura</small><b id="k-ts" style="font-size:14px">—</b></div>
+  </div>
+
+  <div class="aviso" id="aviso"></div>
+  <div class="lista" id="lista"><div style="color:var(--muted);padding:30px;text-align:center">Lendo o Sienge…</div></div>
+
+  <section class="manual">
+    <h2>Fora da API — corrigir na tela do Sienge</h2>
+    <ul id="manual"></ul>
+  </section>
+  <p class="rodape" id="base"></p>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const brl = (v) => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+let DADOS = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch('/api/apropriacao' + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  let j = null; try { j = await r.json(); } catch (_) {}
+  if (!r.ok) throw new Error((j && j.detail) || `HTTP ${r.status}`);
+  return j;
+}
+function aviso(txt, tipo) {
+  const a = $('#aviso'); a.className = 'aviso show ' + tipo; a.textContent = txt;
+  if (tipo === 'ok') setTimeout(() => a.classList.remove('show'), 6000);
+}
+function descAtual(at) {
+  if (!at || at.erro) return at && at.erro ? 'erro ao ler: ' + at.erro : '—';
+  const b = (at.buildings || []).map(x => `${x.buildingName} / ${x.buildingUnitName} · ${x.costEstimationSheetName}${x.percentage != 100 ? ' ' + Math.round(x.percentage) + '%' : ''}`).join(' + ') || '—';
+  const c = (at.budget || []).map(x => `CC ${x.costCenterId} · plano ${(DADOS.planos || {})[x.paymentCategoriesId] || x.paymentCategoriesId}`).join(' + ') || '—';
+  return `${b}<br>${c}`;
+}
+function render() {
+  const d = DADOS, L = $('#lista'); L.innerHTML = '';
+  const pend = d.itens.filter(i => i.status !== 'corrigido');
+  $('#k-pend').textContent = pend.length;
+  $('#k-ok').textContent = d.itens.length - pend.length;
+  $('#k-val').textContent = brl(pend.reduce((s, i) => s + i.valor, 0));
+  $('#k-ts').textContent = d.atualizado_em ? new Date(d.atualizado_em * 1000).toLocaleTimeString('pt-BR') : '—';
+  $('#bt-todos').disabled = pend.length === 0;
+  $('#base').textContent = 'Base: ' + (d.base || '');
+  for (const it of d.itens) {
+    const el = document.createElement('div'); el.className = 'item ' + it.status; el.dataset.id = it.id;
+    const OPS = it.opcoes_item || d.opcoes[it.tributo];
+    const ops = OPS.map((o, k) => `<option value="${k}" ${k == (it.escolha || 0) ? 'selected' : ''}>${o.planilha} · plano ${o.plano_nome || o.plano} — ${o.rotulo}</option>`).join('');
+    const esc = OPS[Math.min(it.escolha || 0, OPS.length - 1)];
+    const linhasRateio = esc && esc.tipo === 'rateio' ? `<div class="rateio">${esc.rateio.obra.map(x => `<div><span>${x.pct.toFixed(2)}%</span> ${x.planilha} <small>· ${x.unidade || ''}</small></div>`).join('')}<div class="rateio-cc">CC: ${esc.rateio.cc.map(c => `${c.costCenterId} (${c.pct.toFixed(2)}%)`).join(' · ')}</div></div>` : '';
+    el.innerHTML = `
+      <div>
+        <div class="it-id">título ${it.id} · ${it.data}</div>
+        <div class="it-doc">${it.tipo} ${it.doc}</div>
+        <div class="it-val">${brl(it.valor)}</div>
+        <div style="margin-top:6px"><span class="tag trib">${it.tributo}</span><span class="tag">cód. ${it.codigo}</span></div>
+      </div>
+      <div class="de"><small>Está em (Sienge agora)</small>${descAtual(it.atual)}</div>
+      <div class="seta">→</div>
+      <div class="para"><small>Deve ir para</small>${esc && esc.tipo === 'rateio' ? 'rateio pelas NFs de origem' : d.obra.nome + ' · CC ' + d.cc.id}
+        <select data-id="${it.id}" ${it.status === 'corrigido' ? 'disabled' : ''}>${ops}</select>${linhasRateio}</div>
+      <div class="it-ac">
+        <span class="st ${it.status}">${({pendente:'pendente', corrigido:'corrigido ✓', parcial:'parcial', erro:'erro'})[it.status]}</span>
+        ${it.status !== 'corrigido' ? `<button class="bt-prim" data-corrigir="${it.id}">Corrigir</button>` : ''}
+        ${it.tem_snapshot ? `<button class="bt-min" data-desfazer="${it.id}">desfazer</button>` : ''}
+      </div>
+      ${it.avisos && it.avisos.length ? `<div class="it-av">⚠ ${it.avisos.join(' · ')}</div>` : ''}
+      <div class="it-res" id="res-${it.id}"></div>`;
+    L.appendChild(el);
+  }
+  $('#manual').innerHTML = (d.manual || []).map(m => `<li>${m.id ? `<b>${m.id}</b> — ` : ''}${m.oque}</li>`).join('');
+}
+async function carregar(atualizar) {
+  try {
+    DADOS = await api(atualizar ? '?atualizar=1' : '');
+    render();
+  } catch (e) { aviso('Não consegui ler o Sienge: ' + e.message, 'crit'); }
+}
+async function corrigir(id, silencioso) {
+  const res = $('#res-' + id); res.textContent = 'aplicando…';
+  try {
+    const r = await api(`/${id}/corrigir`, { method: 'POST' });
+    const cods = r.respostas ? Object.entries(r.respostas).map(([k, v]) => `${k}: HTTP ${v[0]}${v[0] >= 300 ? ' ' + v[1] : ''}`).join(' | ') : '';
+    res.textContent = `${r.msg}${cods ? '  [' + cods + ']' : ''}`;
+    if (!silencioso) aviso(`${id}: ${r.msg}`, r.status === 'corrigido' ? 'ok' : 'crit');
+    return r;
+  } catch (e) { res.textContent = 'erro: ' + e.message; if (!silencioso) aviso(`${id}: ${e.message}`, 'crit'); return null; }
+}
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-corrigir]');
+  if (b) { b.disabled = true; await corrigir(+b.dataset.corrigir); await carregar(false); return; }
+  const u = ev.target.closest('[data-desfazer]');
+  if (u && confirm('Voltar este título para a apropriação anterior?')) {
+    u.disabled = true;
+    try { const r = await api(`/${u.dataset.desfazer}/desfazer`, { method: 'POST' }); aviso(r.ok ? 'Desfeito.' : 'A API não aceitou: ' + JSON.stringify(r.respostas), r.ok ? 'ok' : 'crit'); }
+    catch (e) { aviso(e.message, 'crit'); }
+    await carregar(false);
+  }
+});
+document.addEventListener('change', async (ev) => {
+  const s = ev.target.closest('select[data-id]');
+  if (!s) return;
+  try { await api(`/${s.dataset.id}/escolha`, { method: 'POST', body: JSON.stringify({ escolha: +s.value }) }); await carregar(false); }
+  catch (e) { aviso(e.message, 'crit'); }
+});
+$('#bt-atualizar').onclick = () => carregar(true);
+$('#bt-todos').onclick = async () => {
+  const pend = DADOS.itens.filter(i => i.status !== 'corrigido');
+  if (!confirm(`Corrigir ${pend.length} título(s) no Sienge agora? (${brl(pend.reduce((s, i) => s + i.valor, 0))})`)) return;
+  $('#bt-todos').disabled = true;
+  let ok = 0, falha = 0;
+  for (const it of pend) { const r = await corrigir(it.id, true); if (r && r.status === 'corrigido') ok++; else falha++; }
+  await carregar(false);
+  aviso(`${ok} corrigido(s), ${falha} com problema.`, falha ? 'crit' : 'ok');
+};
+carregar(false);
+</script>
+</body>
+</html>

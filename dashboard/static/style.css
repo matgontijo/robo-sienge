@@ -436,3 +436,7 @@ tr.apto.decidido .p-label, tr.apto.decidido .vcell { opacity: .45; }
     .veredito { gap: 14px; }
     .v-acoes { margin-left: 0; }
 }
+
+/* aba Rejeitados */
+#filtros button.fr b { color: var(--crit); }
+#filtros button.fr.on { border-color: rgba(248,113,113,.5); background: var(--crit-bg); color: var(--crit); }

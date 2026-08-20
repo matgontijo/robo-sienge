@@ -271,7 +271,7 @@ function colunas(d) {
 /* ---------- filtros ---------- */
 const FILTROS = [
     ["PENDENTES", "Pendentes"], ["CRITICAS", "Críticas"], ["ATENCAO", "Atenção"],
-    ["OK", "Liberados"], ["DECIDIDOS", "Decididos"], ["TODOS", "Todos"],
+    ["OK", "Liberados"], ["REJEITADOS", "Rejeitados"], ["DECIDIDOS", "Decididos"], ["TODOS", "Todos"],
 ];
 function tituloNoFiltro(t) {
     switch (FILTRO) {
@@ -279,6 +279,7 @@ function tituloNoFiltro(t) {
         case "CRITICAS": return t.critPend > 0;
         case "ATENCAO": return (t.pendentes - t.critPend) > 0;
         case "OK": return t.divs.length === 0;
+        case "REJEITADOS": return t.rejeitados > 0;
         case "DECIDIDOS": return t.divs.length > 0 && t.pendentes === 0;
         default: return true;
     }
@@ -289,6 +290,7 @@ function divsDoTitulo(t) {
         case "PENDENTES": return probs.filter(d => d.status_revisao === "PENDENTE");
         case "CRITICAS": return probs.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "CRITICA");
         case "ATENCAO": return probs.filter(d => d.status_revisao === "PENDENTE" && d.criticidade === "ATENCAO");
+        case "REJEITADOS": return probs.filter(d => d.status_revisao === "REJEITADO");
         default: return probs;
     }
 }
@@ -302,7 +304,7 @@ function renderFiltros() {
     const c = $("filtros"); c.innerHTML = "";
     FILTROS.forEach(([f, label]) => {
         const b = document.createElement("button");
-        b.className = (FILTRO === f ? "on " : "") + (f === "CRITICAS" ? "fc" : f === "ATENCAO" ? "fw" : "");
+        b.className = (FILTRO === f ? "on " : "") + (f === "CRITICAS" ? "fc" : f === "ATENCAO" ? "fw" : f === "REJEITADOS" ? "fr" : "");
         b.innerHTML = `${label} <b>${contar(f)}</b>`;
         b.onclick = () => { FILTRO = f; render(); };
         c.appendChild(b);
@@ -374,6 +376,8 @@ function render() {
                 <button onclick="abrirPasta()">📁 Abrir pasta dos anexos</button></div>`;
         } else if (busca) {
             vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nenhum título encontrado</h2><p>Nada bate com “${BUSCA}”.</p>`;
+        } else if (FILTRO === "REJEITADOS") {
+            vazio.innerHTML = `<div class="emoji">✗</div><h2>Nenhum rejeitado</h2><p>Nenhuma divergência deste ciclo foi rejeitada até agora.</p>`;
         } else {
             vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nada aqui</h2><p>Nenhum título com esse filtro.</p>`;
         }
@@ -690,3 +694,6 @@ $("bt-salvar-cfg").onclick = async () => {
 
 /* ============================================================ */
 boot();
+
+// vindo do agente com #config: abre as configurações direto
+if (location.hash === '#config') { setTimeout(() => { const b = document.getElementById('bt-config'); if (b) b.click(); }, 400); }

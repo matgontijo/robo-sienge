@@ -41,11 +41,29 @@ class ConfigUpdate(BaseModel, extra=Extra.allow):
 # Static HTML e CSS/JS (NÃO EXIGE AUTH HTTP NA ROTA DIRETA 
 # POIS O JAVASCRIPT CUIDA DA SESSÃO, EXCETO /api)
 # ---------------------------------------------------------
+_SEM_CACHE = {"Cache-Control": "no-cache, must-revalidate"}   # paginas mudam a cada versao; JS velho quebra o stream
+
 @app.get("/")
 async def read_index():
-    return FileResponse(os.path.join(static_dir, "index.html"))
+    """Porta de entrada: o AGENTE (assistente do financeiro no Sienge)."""
+    return FileResponse(os.path.join(static_dir, "agente.html"), headers=_SEM_CACHE)
+
+@app.get("/conferencia")
+async def read_conferencia():
+    """A função original do robô: enviar a remessa, acompanhar o ciclo e decidir as divergências."""
+    return FileResponse(os.path.join(static_dir, "index.html"), headers=_SEM_CACHE)
+
+@app.get("/apropriacao")
+async def read_apropriacao():
+    """Painel para corrigir a apropriação (obra / centro de custo) dos impostos lançados errado."""
+    return FileResponse(os.path.join(static_dir, "apropriacao.html"), headers=_SEM_CACHE)
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+from dashboard.apropriacao import router as apropriacao_router
+app.include_router(apropriacao_router, dependencies=[Depends(get_current_user)])
+from dashboard.agente import router as agente_router
+app.include_router(agente_router, dependencies=[Depends(get_current_user)])
 
 # ---------------------------------------------------------
 # Endpoints da API (EXIGEM AUTH)
