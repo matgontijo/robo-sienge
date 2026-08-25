@@ -76,6 +76,8 @@ Regras do negócio que você já sabe (Grupo Garden):
 - O robô de conferência confere remessas de pagamento (NF x título x boleto x destino) e registra divergências; a tela /conferencia mostra tudo.
 
 Escrita no ERP: as ferramentas alterar_* pedem confirmação do usuário automaticamente. Antes de chamar, mostre exatamente o que vai mudar (de → para) e só então chame. Nunca altere nada que o usuário não pediu.
+
+E-mail (Gmail do usuário): você pode ler e-mails livremente e ENVIAR somente quando o usuário pedir — todo envio abre um cartão de confirmação com o e-mail inteiro. Escreva o e-mail em português, direto e profissional; assine "Matheus Gontijo · Financeiro Grupo Garden". Nunca envie nada que o usuário não pediu, e nunca inclua senhas ou chaves em e-mails.
 """
 
 
@@ -138,15 +140,7 @@ def _rodar_claude_code(cid, texto_usuario, conv):
         async def handler(args):
             entrada = args or {}
             if f["escreve"]:
-                token = uuid.uuid4().hex[:10]
-                ev = threading.Event()
-                with _lock:
-                    _pendentes[token] = dict(evento=ev, aprovado=None, cid=cid)
-                _emitir(cid, "confirm", dict(token=token, nome=f["name"], entrada=entrada))
-                await anyio.to_thread.run_sync(ev.wait, 900)
-                with _lock:
-                    dec = _pendentes.pop(token, {})
-                if not dec.get("aprovado"):
+                if not await _confirmar(f["name"], entrada):
                     _emitir(cid, "tool_result", dict(id=f["name"], nome=f["name"], resumo="cancelado pelo usuário"))
                     return {"content": [{"type": "text", "text": json.dumps({"cancelado": True, "motivo": "usuário não confirmou a alteração"}, ensure_ascii=False)}]}
             saida, erro = await anyio.to_thread.run_sync(T.executar, f["name"], entrada)
@@ -154,12 +148,46 @@ def _rodar_claude_code(cid, texto_usuario, conv):
         return tool(f["name"], f["description"], f["input_schema"])(handler)
 
     servidor = create_sdk_mcp_server("sienge", "1.0.0", tools=[_fazer(f) for f in T.FERRAMENTAS])
+
+    async def _confirmar(rotulo, entrada):
+        """Mostra o cartão de confirmação no painel e espera o clique (True = aprovado)."""
+        token = uuid.uuid4().hex[:10]
+        ev = threading.Event()
+        with _lock:
+            _pendentes[token] = dict(evento=ev, aprovado=None, cid=cid)
+        _emitir(cid, "confirm", dict(token=token, nome=rotulo, entrada=entrada))
+        await anyio.to_thread.run_sync(ev.wait, 900)
+        with _lock:
+            dec = _pendentes.pop(token, {})
+        return bool(dec.get("aprovado"))
+
+    # E-mail (conector Gmail da conta): leitura é livre; qualquer ENVIO passa pelo cartão de
+    # confirmação com o e-mail inteiro à vista. O resto continua bloqueado.
+    GMAIL_ESCRITA = ("send_message", "reply", "forward", "create_draft", "update_draft",
+                     "trash_message", "trash_thread", "mark_message_spam", "mark_thread_spam")
+
+    async def pode_usar(nome, entrada, contexto):
+        from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+        base = nome.split("__")[-1]
+        if nome.startswith("mcp__sienge__") or base in ("Read", "Glob", "Grep", "ToolSearch"):
+            return PermissionResultAllow()
+        if "gmail" in nome.lower():
+            if base not in GMAIL_ESCRITA:
+                return PermissionResultAllow()
+            if await _confirmar(f"enviar e-mail ({base})", entrada):
+                return PermissionResultAllow()
+            _emitir(cid, "tool_result", dict(id=nome, nome=f"gmail: {base}", resumo="cancelado pelo usuário"))
+            return PermissionResultDeny(message="O usuário não confirmou o envio deste e-mail.")
+        return PermissionResultDeny(message="Ferramenta não liberada no painel.")
     system = SYSTEM.format(hoje=date.today().strftime("%d/%m/%Y")) + (
         "\n\nVocê roda como Claude Code dentro do painel do robô. Além das ferramentas do Sienge (mcp__sienge__*), pode LER arquivos "
         "da pasta do projeto (Read/Glob/Grep) — as análises ficam em output/*.json e output/*.xlsx. Não edite arquivos nem rode comandos.")
     opcoes = ClaudeAgentOptions(
         system_prompt=system, mcp_servers={"sienge": servidor},
+        # Gmail fica FORA de allowed_tools de propósito: ferramenta listada ali é pré-aprovada
+        # e nunca passa pelo can_use_tool — o gate de confirmação seria pulado.
         allowed_tools=["mcp__sienge__*", "Read", "Glob", "Grep"],
+        can_use_tool=pode_usar,
         disallowed_tools=["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "KillShell", "BashOutput", "EnterPlanMode", "ExitPlanMode"],
         permission_mode="default", cwd=RAIZ, setting_sources=[], include_partial_messages=True, max_turns=40,
         resume=conv.get("sessao_claude") or None, model=os.getenv("AGENTE_MODELO_CC") or None,
@@ -206,7 +234,7 @@ def _rodar_claude_code(cid, texto_usuario, conv):
                     if isinstance(b, TextBlock):
                         texto_final.append(b.text)
                     elif isinstance(b, ToolUseBlock):
-                        nome = b.name.replace("mcp__sienge__", "")
+                        nome = b.name.replace("mcp__sienge__", "").replace("mcp__claude_ai_Gmail__", "gmail: ")
                         nomes_tool[b.id] = nome
                         if nome in ("ToolSearch",):      # mecânica interna do Claude Code, não interessa ao usuário
                             continue
@@ -216,6 +244,7 @@ def _rodar_claude_code(cid, texto_usuario, conv):
                 for b in m.content:
                     if isinstance(b, ToolResultBlock):
                         nome = nomes_tool.get(b.tool_use_id, "")
+
                         if nome in ("ToolSearch",):
                             continue
                         txt = b.content if isinstance(b.content, str) else json.dumps(b.content, ensure_ascii=False, default=str)
