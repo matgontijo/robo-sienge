@@ -16,6 +16,12 @@ _BANCOS = {"001": "Banco do Brasil", "033": "Santander", "104": "Caixa",
 # Código do banco de onde saem os pagamentos (boleto "próprio banco")
 BANCO_CASA = "033"  # Santander
 
+# Fornecedores que recebem via REPRESENTANTE de pagamento (favorecido combinado, não é desvio):
+# CNPJ do fornecedor -> CNPJs autorizados a receber por ele.
+REPRESENTANTES_PAGAMENTO = {
+    "14197461000100": ("27988679000125",),   # CONSPLAN -> MVCG Administração de Recursos Financeiros de Obras
+}
+
 @dataclass
 class Divergencia:
     titulo_id: int
@@ -564,15 +570,18 @@ class Reconciler:
         if not cnpj_destino and boleto_anexo:
             cnpj_destino = self._limpar_cnpj(boleto_anexo.cnpj_beneficiario)
 
-        # 1) Destino x fornecedor (CRÍTICA)
+        # 1) Destino x fornecedor (CRÍTICA), exceto representante de pagamento cadastrado
         if cnpj_destino and cnpj_ref and cnpj_destino != cnpj_ref:
-            divs.append(Divergencia(
-                titulo_id=titulo.id, titulo_numero=titulo.numero,
-                tipo="PAGAMENTO_DESTINO_DIVERGENTE",
-                campo=f"Destino do Pagamento ({forma or 'N/D'})",
-                valor_sienge=cnpj_ref, valor_nfe="-", valor_boleto=cnpj_destino,
-                criticidade="CRITICA", danfe_path=titulo.danfe_path,
-            ))
+            if cnpj_destino in REPRESENTANTES_PAGAMENTO.get(cnpj_ref, ()):  # arranjo combinado
+                logger.info(f"Título {titulo.numero}: destino {cnpj_destino} é representante de pagamento cadastrado de {cnpj_ref} — ok")
+            else:
+                divs.append(Divergencia(
+                    titulo_id=titulo.id, titulo_numero=titulo.numero,
+                    tipo="PAGAMENTO_DESTINO_DIVERGENTE",
+                    campo=f"Destino do Pagamento ({forma or 'N/D'})",
+                    valor_sienge=cnpj_ref, valor_nfe="-", valor_boleto=cnpj_destino,
+                    criticidade="CRITICA", danfe_path=titulo.danfe_path,
+                ))
 
         # 2) PIX com chave não-CNPJ: não dá pra confirmar o titular -> conferência manual
         if "PIX" in forma and info.tipo_chave_pix and info.tipo_chave_pix.upper() != "CNPJ":
