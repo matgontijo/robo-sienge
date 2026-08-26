@@ -48,13 +48,13 @@ def test_login_certo_e_me():
 def test_admin_gerencia_usuarios_e_telas():
     c = _login(TestClient(app))
     c.delete("/api/usuarios/pytest_user")  # limpeza de execução anterior
-    r = c.post("/api/usuarios", json={"username": "pytest_user", "senha": "senha123",
+    r = c.post("/api/usuarios", json={"username": "pytest@kfinserv.com.br", "senha": "senha123",
                                       "role": "OPERADOR", "telas": ["conferencia"]})
     assert r.status_code == 200
 
     # o usuário restrito só enxerga a tela liberada
     c2 = TestClient(app)
-    assert c2.post("/api/login", json={"username": "pytest_user", "senha": "senha123"}).status_code == 200
+    assert c2.post("/api/login", json={"username": "pytest@kfinserv.com.br", "senha": "senha123"}).status_code == 200
     assert c2.get("/api/execucoes?limit=1").status_code == 200          # conferencia: liberada
     assert c2.get("/api/agente/conversas").status_code == 403           # agente: negada
     assert c2.get("/api/usuarios").status_code == 403                   # admin only
