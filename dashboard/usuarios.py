@@ -1,5 +1,7 @@
-"""Gestão de usuários (somente ADMIN): cadastrar, liberar telas, trocar senha, bloquear."""
+"""Gestão de usuários (somente ADMIN): cadastrar, liberar telas, trocar senha, bloquear.
+Padrão da casa: o usuário de login é o E-MAIL da pessoa."""
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -29,9 +31,11 @@ class NovoUsuario(BaseModel):
 
 @router.post("")
 def criar(n: NovoUsuario):
-    nome = n.username.strip()
-    if not nome or len(n.senha) < 6:
-        raise HTTPException(400, "Informe usuário e uma senha com pelo menos 6 caracteres")
+    nome = n.username.strip().lower()
+    if not re.fullmatch(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}", nome):
+        raise HTTPException(400, "O usuário deve ser um e-mail (ex.: nome@kfinserv.com.br)")
+    if len(n.senha) < 6:
+        raise HTTPException(400, "Senha com pelo menos 6 caracteres")
     if db.get_usuario(nome):
         raise HTTPException(409, "Já existe um usuário com esse nome")
     if n.role not in ("OPERADOR", "ADMIN"):
