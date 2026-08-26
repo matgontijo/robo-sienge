@@ -11,7 +11,8 @@ from pydantic import BaseModel
 
 import config
 from dashboard import database as db
-from dashboard.auth import get_current_user
+from dashboard.auth import criar_token, get_current_user, requer_tela, telas_do, usuario_da_request
+from dashboard import auth as auth_mod
 import orchestrator
 
 app = FastAPI(title="Robô Conciliação - Dashboard")
@@ -43,46 +44,103 @@ class ConfigUpdate(BaseModel, extra=Extra.allow):
 # ---------------------------------------------------------
 _SEM_CACHE = {"Cache-Control": "no-cache, must-revalidate"}   # paginas mudam a cada versao; JS velho quebra o stream
 
+from fastapi.responses import RedirectResponse
+
+
+def _pagina(request: Request, arquivo: str, tela: str = None):
+    """Serve a página se o usuário está logado (e com a tela liberada); senão manda pro /login."""
+    u = usuario_da_request(request)
+    if not u:
+        return RedirectResponse(f"/login?next={request.url.path}", status_code=302)
+    if tela and tela not in telas_do(u):
+        permitidas = telas_do(u)
+        destino = {"agente": "/", "conferencia": "/conferencia", "apropriacao": "/apropriacao"}
+        for t in ("agente", "conferencia", "apropriacao"):
+            if t in permitidas:
+                return RedirectResponse(destino[t] + "?semacesso=" + tela, status_code=302)
+        return RedirectResponse("/login?erro=sem-telas", status_code=302)
+    return FileResponse(os.path.join(static_dir, arquivo), headers=_SEM_CACHE)
+
+
+@app.get("/login")
+async def read_login():
+    return FileResponse(os.path.join(static_dir, "login.html"), headers=_SEM_CACHE)
+
+
 @app.get("/")
-async def read_index():
+async def read_index(request: Request):
     """Porta de entrada: o AGENTE (assistente do financeiro no Sienge)."""
-    return FileResponse(os.path.join(static_dir, "agente.html"), headers=_SEM_CACHE)
+    return _pagina(request, "agente.html", "agente")
 
 @app.get("/conferencia")
-async def read_conferencia():
+async def read_conferencia(request: Request):
     """A função original do robô: enviar a remessa, acompanhar o ciclo e decidir as divergências."""
-    return FileResponse(os.path.join(static_dir, "index.html"), headers=_SEM_CACHE)
+    return _pagina(request, "index.html", "conferencia")
 
 @app.get("/apropriacao")
-async def read_apropriacao():
+async def read_apropriacao(request: Request):
     """Painel para corrigir a apropriação (obra / centro de custo) dos impostos lançados errado."""
-    return FileResponse(os.path.join(static_dir, "apropriacao.html"), headers=_SEM_CACHE)
+    return _pagina(request, "apropriacao.html", "apropriacao")
+
+@app.get("/usuarios")
+async def read_usuarios(request: Request):
+    u = usuario_da_request(request)
+    if not u or u.role != "ADMIN":
+        return RedirectResponse("/login?next=/usuarios", status_code=302)
+    return FileResponse(os.path.join(static_dir, "usuarios.html"), headers=_SEM_CACHE)
+
+
+class LoginPayload(BaseModel):
+    username: str
+    senha: str
+
+
+@app.post("/api/login")
+def api_login(p: LoginPayload, response: Response):
+    import time as _t
+    _t.sleep(0.4)   # freio simples contra força bruta
+    u = auth_mod.autenticar(p.username, p.senha)
+    if not u:
+        raise HTTPException(401, "Usuário ou senha inválidos")
+    response.set_cookie("sessao", criar_token(u.username), max_age=auth_mod.VALIDADE_S,
+                        httponly=True, samesite="lax")
+    return {"ok": True, "username": u.username, "role": u.role, "telas": telas_do(u)}
+
+
+@app.post("/api/logout")
+def api_logout(response: Response):
+    response.delete_cookie("sessao")
+    return {"ok": True}
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 from dashboard.apropriacao import router as apropriacao_router
-app.include_router(apropriacao_router, dependencies=[Depends(get_current_user)])
+app.include_router(apropriacao_router, dependencies=[Depends(requer_tela("apropriacao"))])
 from dashboard.agente import router as agente_router
-app.include_router(agente_router, dependencies=[Depends(get_current_user)])
+app.include_router(agente_router, dependencies=[Depends(requer_tela("agente"))])
+from dashboard.agente import worker_router
+app.include_router(worker_router)          # autenticação própria por token de worker
+from dashboard.usuarios import router as usuarios_router
+app.include_router(usuarios_router)
 
 # ---------------------------------------------------------
 # Endpoints da API (EXIGEM AUTH)
 # ---------------------------------------------------------
 api_route = app.router
 
-@app.get("/api/me", dependencies=[Depends(get_current_user)])
+@app.get("/api/me")
 def get_me(current_user: db.Usuario = Depends(get_current_user)):
-    return {"username": current_user.username, "role": current_user.role}
+    return {"username": current_user.username, "role": current_user.role, "telas": telas_do(current_user)}
 
-@app.get("/api/stats", dependencies=[Depends(get_current_user)])
+@app.get("/api/stats", dependencies=[Depends(requer_tela("conferencia"))])
 def get_stats():
     return db.get_stats_gerais()
 
-@app.get("/api/execucoes", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes", dependencies=[Depends(requer_tela("conferencia"))])
 def listar_execucoes(limit: int = 50):
     return db.get_execucoes(limit)
 
-@app.get("/api/execucoes/{execucao_id}", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}", dependencies=[Depends(requer_tela("conferencia"))])
 def obter_execucao(execucao_id: int):
     execucao = db.get_execucao(execucao_id)
     if not execucao:
@@ -94,11 +152,11 @@ def obter_execucao(execucao_id: int):
         "divergencias": divergencias
     }
 
-@app.get("/api/execucoes/{execucao_id}/divergencias", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/divergencias", dependencies=[Depends(requer_tela("conferencia"))])
 def listar_divergencias(execucao_id: int, criticidade: str = None, q: str = None):
     return db.get_divergencias(execucao_id, criticidade, q)
 
-@app.get("/api/execucoes/{execucao_id}/pagamentos", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/pagamentos", dependencies=[Depends(requer_tela("conferencia"))])
 def listar_pagamentos(execucao_id: int):
     return db.get_pagamentos(execucao_id)
 
@@ -128,7 +186,7 @@ NOMES_TIPO_PT = {
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 }
 
-@app.get("/api/execucoes/{execucao_id}/revisao/relatorio", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/revisao/relatorio", dependencies=[Depends(requer_tela("conferencia"))])
 def relatorio_revisao(execucao_id: int, status: str = "REJEITADO"):
     """Gera um Excel com as divergências revisadas no status pedido
     (REJEITADO por padrão) — o dossiê para corrigir os lançamentos no Sienge."""
@@ -178,7 +236,7 @@ class RevisaoPayload(BaseModel):
 
 @app.post("/api/divergencias/{divergencia_id}/revisao")
 def revisar_divergencia(divergencia_id: int, payload: RevisaoPayload,
-                        user=Depends(get_current_user)):
+                        user=Depends(requer_tela("conferencia"))):
     status_norm = (payload.status or "").upper()
     if status_norm not in ("PENDENTE", "APROVADO", "REJEITADO"):
         raise HTTPException(status_code=400, detail="status deve ser PENDENTE, APROVADO ou REJEITADO")
@@ -188,11 +246,11 @@ def revisar_divergencia(divergencia_id: int, payload: RevisaoPayload,
         raise HTTPException(status_code=404, detail="Divergência não encontrada")
     return d
 
-@app.get("/api/execucoes/{execucao_id}/logs", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/logs", dependencies=[Depends(requer_tela("conferencia"))])
 def listar_logs(execucao_id: int):
     return db.get_logs(execucao_id)
 
-@app.get("/api/execucoes/{execucao_id}/relatorio", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/relatorio", dependencies=[Depends(requer_tela("conferencia"))])
 def download_relatorio(execucao_id: int):
     execucao = db.get_execucao(execucao_id)
     if not execucao or not execucao.relatorio_path:
@@ -215,7 +273,7 @@ def download_relatorio(execucao_id: int):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-@app.get("/api/execucoes/{execucao_id}/abrir-pasta", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/abrir-pasta", dependencies=[Depends(requer_tela("conferencia"))])
 def abrir_pasta_anexos(execucao_id: int):
     """Abre, no Explorer da máquina que roda o painel (o PC do usuário), a pasta
     com os documentos deste ciclo: o dossiê (NF/boleto organizados) se existir,
@@ -234,7 +292,7 @@ def abrir_pasta_anexos(execucao_id: int):
             aberto = False
     return {"pasta": pasta, "existe": existe, "aberto": aberto}
 
-@app.get("/api/execucoes/{execucao_id}/danfe", dependencies=[Depends(get_current_user)])
+@app.get("/api/execucoes/{execucao_id}/danfe", dependencies=[Depends(requer_tela("conferencia"))])
 def download_danfe(execucao_id: int, path: str):
     # Path traversal protection
     abs_path = os.path.abspath(path)
@@ -264,7 +322,7 @@ def _limpar_execucoes_orfas():
 
 _limpar_execucoes_orfas()  # limpeza na subida do painel
 
-@app.post("/api/execucoes/iniciar", dependencies=[Depends(get_current_user)])
+@app.post("/api/execucoes/iniciar", dependencies=[Depends(requer_tela("conferencia"))])
 def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_current_user)):
     if current_user.role == "LEITURA":
         raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
@@ -298,7 +356,7 @@ def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_cur
         return {"execucao_id": ultima[0].id}
     return {"execucao_id": 0}
 
-@app.post("/api/execucoes/iniciar-relatorio", dependencies=[Depends(get_current_user)])
+@app.post("/api/execucoes/iniciar-relatorio", dependencies=[Depends(requer_tela("conferencia"))])
 def iniciar_execucao_relatorio(
     arquivo: UploadFile = File(...),
     data_inicio: str = Form(None),
@@ -364,7 +422,7 @@ def iniciar_execucao_relatorio(
                                 detail="O ciclo não conseguiu iniciar — veja logs/ciclo_subprocesso.log")
     return {"execucao_id": 0}
 
-@app.post("/api/execucoes/{execucao_id}/abortar", dependencies=[Depends(get_current_user)])
+@app.post("/api/execucoes/{execucao_id}/abortar", dependencies=[Depends(requer_tela("conferencia"))])
 def abortar_execucao(execucao_id: int, current_user: db.Usuario = Depends(get_current_user)):
     if current_user.role == "LEITURA":
         raise HTTPException(status_code=403, detail="Usuário sem permissão para abortar execução")
@@ -436,7 +494,9 @@ def update_config(payload: dict, current_user: db.Usuario = Depends(get_current_
 # ---------------------------------------------------------
 @app.get("/api/stream/{execucao_id}")
 async def stream_logs(execucao_id: int, req: Request):
-    # Painel sem login: o stream é aberto direto, sem validação de credencial.
+    u = usuario_da_request(req)
+    if not u or "conferencia" not in telas_do(u):
+        raise HTTPException(status_code=401, detail="Faça login")
     async def event_generator():
         last_id = 0
         while True:

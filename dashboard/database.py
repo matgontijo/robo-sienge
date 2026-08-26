@@ -18,6 +18,8 @@ class Usuario(Base):
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
     role = Column(String) # ADMIN | OPERADOR | LEITURA
+    telas = Column(String, default="[]")   # JSON: telas liberadas p/ nao-admin (agente, conferencia, apropriacao)
+    ativo = Column(Integer, default=1)     # 0 = bloqueado
     criado_em = Column(DateTime, default=datetime.now)
 
 class Execucao(Base):
@@ -129,12 +131,15 @@ Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def _migrar_colunas():
-    """Migração leve para bancos SQLite ANTIGOS (adiciona colunas que faltam).
-    No Postgres o create_all já cria as tabelas com todas as colunas do modelo,
-    então esta migração roda só no SQLite."""
-    if not IS_SQLITE:
-        return
+    """Migração leve: adiciona colunas que faltam em bancos criados por versões antigas.
+    SQLite via PRAGMA; Postgres via ADD COLUMN IF NOT EXISTS."""
     from sqlalchemy import text
+    if not IS_SQLITE:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telas TEXT DEFAULT '[]'"))
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ativo INTEGER DEFAULT 1"))
+            conn.commit()
+        return
     novas = {
         "status_revisao": "TEXT DEFAULT 'PENDENTE'",
         "observacao_revisao": "TEXT",
@@ -143,6 +148,7 @@ def _migrar_colunas():
     }
     novas_pag = {"retencoes": "TEXT", "liquido_calc": "REAL", "regime": "TEXT"}
     novas_exec = {"pid": "INTEGER"}
+    novas_usr = {"telas": "TEXT DEFAULT '[]'", "ativo": "INTEGER DEFAULT 1"}
     with engine.connect() as conn:
         existentes = {r[1] for r in conn.execute(text("PRAGMA table_info(divergencias)"))}
         for col, ddl in novas.items():
@@ -156,6 +162,10 @@ def _migrar_colunas():
         for col, ddl in novas_pag.items():
             if existentes_pag and col not in existentes_pag:
                 conn.execute(text(f"ALTER TABLE pagamentos ADD COLUMN {col} {ddl}"))
+        existentes_usr = {r[1] for r in conn.execute(text("PRAGMA table_info(usuarios)"))}
+        for col, ddl in novas_usr.items():
+            if existentes_usr and col not in existentes_usr:
+                conn.execute(text(f"ALTER TABLE usuarios ADD COLUMN {col} {ddl}"))
         conn.commit()
 
 _migrar_colunas()
@@ -173,15 +183,6 @@ def seed_admin_user():
         if not admin:
             db.add(Usuario(
                 username=admin_user,
-                password_hash=pwd_context.hash(admin_pass),
-                role="ADMIN"
-            ))
-
-        # Usuário secundário histórico (mantido para compatibilidade)
-        rafael = db.query(Usuario).filter(Usuario.username == "Rafael").first()
-        if not rafael:
-            db.add(Usuario(
-                username="Rafael",
                 password_hash=pwd_context.hash(admin_pass),
                 role="ADMIN"
             ))
@@ -436,5 +437,68 @@ def get_stats_gerais() -> Dict[str, Any]:
         stats["total_execucoes_mes"] = db.query(Execucao).filter(func.date(Execucao.iniciado_em) >= primeiro_dia_mes).count()
 
         return stats
+    finally:
+        db.close()
+
+
+# ========================================== usuários (login / telas)
+def get_usuario(username: str) -> Optional[Usuario]:
+    db = SessionLocal()
+    try:
+        return db.query(Usuario).filter(Usuario.username == username).first()
+    finally:
+        db.close()
+
+
+def listar_usuarios() -> List[Usuario]:
+    db = SessionLocal()
+    try:
+        return db.query(Usuario).order_by(Usuario.username).all()
+    finally:
+        db.close()
+
+
+def criar_usuario(username: str, senha: str, role: str = "OPERADOR", telas: str = "[]") -> Usuario:
+    db = SessionLocal()
+    try:
+        u = Usuario(username=username.strip(), password_hash=pwd_context.hash(senha), role=role, telas=telas, ativo=1)
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        return u
+    finally:
+        db.close()
+
+
+def atualizar_usuario(username: str, senha: str = None, role: str = None, telas: str = None, ativo: int = None):
+    db = SessionLocal()
+    try:
+        u = db.query(Usuario).filter(Usuario.username == username).first()
+        if not u:
+            return None
+        if senha:
+            u.password_hash = pwd_context.hash(senha)
+        if role is not None:
+            u.role = role
+        if telas is not None:
+            u.telas = telas
+        if ativo is not None:
+            u.ativo = ativo
+        db.commit()
+        db.refresh(u)
+        return u
+    finally:
+        db.close()
+
+
+def apagar_usuario(username: str) -> bool:
+    db = SessionLocal()
+    try:
+        u = db.query(Usuario).filter(Usuario.username == username).first()
+        if not u:
+            return False
+        db.delete(u)
+        db.commit()
+        return True
     finally:
         db.close()

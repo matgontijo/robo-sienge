@@ -173,12 +173,13 @@ details.passos-box summary::before{content:"▸";font-size:10px;transition:trans
 <body>
 <header class="bar">
   <div class="brand"><span class="gem">G</span><div>Agente Sienge<small>Grupo Garden</small></div></div>
-  <nav class="nav"><a class="on" href="/">Agente</a><a href="/conferencia">Conferência</a><a href="/apropriacao">Impostos</a></nav>
+  <nav class="nav" id="nav"><a class="on" href="/" data-tela="agente">Agente</a><a href="/conferencia" data-tela="conferencia">Conferência</a><a href="/apropriacao" data-tela="apropriacao">Impostos</a><a href="/usuarios" data-tela="usuarios" style="display:none">Usuários</a></nav>
   <span class="sp"></span>
   <span class="pill" id="pill-robo"><i></i><span>robô</span></span>
   <button class="ico" id="bt-hist" title="Mostrar / esconder conversas">☰</button>
   <button class="ico" id="bt-ctx" title="Mostrar / esconder contexto">▥</button>
-  <a class="ico" href="/conferencia#config" title="Configurações (.env)">⚙</a>
+  <a class="ico" href="/conferencia#config" id="ico-config" title="Configurações (.env)">⚙</a>
+  <button class="ico" id="bt-sair" title="Sair">⏻</button>
 </header>
 
 <div class="app" id="app">
@@ -399,7 +400,15 @@ async function robo() {
   } catch (_) {}
 }
 async function motor() { try { const m = await api('/status'); $('#motor').innerHTML = `<div class="item"><i style="background:${m.pronto ? 'var(--ok)' : 'var(--bad)'}"></i><div><b>${m.provedor === 'claude-code' ? 'Claude Code' : 'Anthropic API'}</b><br>${esc(m.descricao)}<br><span style="color:var(--faint)">modelo: ${esc(m.modelo)}</span></div></div>`; } catch (_) { $('#motor').textContent = 'indisponível'; } }
-(async () => { motor(); await listar(); const ult = localStorage.getItem('agente.cid'); if (ult) { try { await abrir(ult); } catch (_) { CID = null; localStorage.removeItem('agente.cid'); } } robo(); setInterval(robo, 15000); setInterval(() => { if (!OCUPADO) listar().catch(() => {}); }, 12000); $('#inp').focus(); })();
+$('#bt-sair').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; };
+async function aplicarTelas() {
+  try { const me = await (await fetch('/api/me')).json();
+    if (!me.telas) return;
+    document.querySelectorAll('#nav a[data-tela]').forEach(a => { a.style.display = me.telas.includes(a.dataset.tela) ? '' : 'none'; });
+    if (!me.telas.includes('config')) $('#ico-config').style.display = 'none';
+  } catch (_) {}
+}
+(async () => { aplicarTelas(); motor(); await listar(); const ult = localStorage.getItem('agente.cid'); if (ult) { try { await abrir(ult); } catch (_) { CID = null; localStorage.removeItem('agente.cid'); } } robo(); setInterval(robo, 15000); setInterval(() => { if (!OCUPADO) listar().catch(() => {}); }, 12000); $('#inp').focus(); })();
 </script>
 </body>
 </html>

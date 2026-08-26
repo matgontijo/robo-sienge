@@ -697,3 +697,7 @@ boot();
 
 // vindo do agente com #config: abre as configurações direto
 if (location.hash === '#config') { setTimeout(() => { const b = document.getElementById('bt-config'); if (b) b.click(); }, 400); }
+
+// 401 -> login
+const __fetch = window.fetch.bind(window);
+window.fetch = async (...a) => { const r = await __fetch(...a); if (r.status === 401 && !String(a[0]).includes('/api/login')) { location.href = '/login?next=' + encodeURIComponent(location.pathname); } return r; };

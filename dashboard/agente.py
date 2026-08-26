@@ -58,6 +58,21 @@ _live = {}         # conversa_id -> resposta em andamento (para religar o navega
 _cancelar = {}     # conversa_id -> threading.Event (botão Parar)
 _lock = threading.Lock()
 
+# ---- modo nuvem: o painel roda no Render, mas a IA executa na máquina do usuário.
+# O worker local (agente_worker.py) busca trabalhos aqui e devolve os eventos.
+MODO = os.getenv("AGENTE_MODO", "local")                      # local | nuvem
+WORKER_TOKEN = os.getenv("AGENTE_WORKER_TOKEN", "")
+_trabalhos = queue.Queue()                                     # jobs aguardando o worker
+_decisoes = {}                                                 # token de confirmação -> True/False (modo nuvem)
+
+
+def _worker_ok(request: Request):
+    if MODO != "nuvem":
+        raise HTTPException(404, "modo nuvem desligado")
+    if not WORKER_TOKEN or request.headers.get("X-Worker-Token") != WORKER_TOKEN:
+        raise HTTPException(401, "token de worker inválido")
+    return True
+
 SYSTEM = """Você é o agente financeiro do Grupo Garden dentro do Sienge (ERP). Fala SEMPRE português do Brasil — inclusive nas frases curtas antes de usar uma ferramenta ("vou buscar…", nunca "I'll…") — direto, sem rodeios, como um colega experiente do financeiro.
 Seu usuário é Matheus Gontijo (financeiro). Use as ferramentas para responder com DADOS do Sienge, nunca de memória. Quando a pergunta envolve títulos, sempre consulte.
 
@@ -481,6 +496,15 @@ def enviar(cid: str, m: Msg):
             raise HTTPException(409, "esta conversa ainda está processando a pergunta anterior")
         _filas[cid] = queue.Queue()
         _live[cid] = dict(ativo=True, texto="", passos=[], confirms=[], erros=[])   # antes da thread: o stream pode conectar antes dela
+    if MODO == "nuvem":
+        conv = _ler(cid)
+        conv["mensagens"].append(dict(papel="user", texto=m.texto.strip(), quando=datetime.now().isoformat(timespec="seconds")))
+        if conv.get("titulo") in (None, "", "Nova conversa"):
+            conv["titulo"] = _titulo_auto(m.texto.strip())
+        conv["atualizada_em"] = datetime.now().isoformat(timespec="seconds")
+        _salvar(conv)
+        _trabalhos.put(dict(cid=cid, texto=m.texto.strip(), sessao=conv.get("sessao_claude")))
+        return {"ok": True, "modo": "nuvem"}
     threading.Thread(target=_rodar, args=(cid, m.texto.strip()), daemon=True).start()
     return {"ok": True}
 
@@ -494,11 +518,14 @@ class Conf(BaseModel):
 def confirmar(cid: str, c: Conf):
     with _lock:
         p = _pendentes.get(c.token)
-        if not p:
+        if p:
+            p["aprovado"] = bool(c.aprovado)
+            p["evento"].set()
+        elif MODO == "nuvem":
+            _decisoes[c.token] = bool(c.aprovado)
+        else:
             raise HTTPException(404, "confirmação não encontrada ou expirada")
-        p["aprovado"] = bool(c.aprovado)
-        p["evento"].set()
-        st = _live.get(p.get("cid") or cid)
+        st = _live.get((p or {}).get("cid") or cid)
         if st:
             st["confirms"] = [x for x in st["confirms"] if x.get("token") != c.token]
     return {"ok": True}
@@ -520,6 +547,10 @@ def parar(cid: str):
     if ev:
         ev.set()
         return {"ok": True}
+    if MODO == "nuvem":
+        with _lock:
+            _cancelar.setdefault(cid, threading.Event()).set()
+        return {"ok": True, "modo": "nuvem"}
     return {"ok": False, "motivo": "esta resposta não dá para interromper (motor API)"}
 
 
@@ -561,3 +592,74 @@ async def stream(cid: str, req: Request):
                 await asyncio.sleep(0.2)
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ------------------------------------------------------------------ rotas do WORKER (modo nuvem)
+from fastapi import APIRouter as _APIRouter
+
+worker_router = _APIRouter(prefix="/api/agente/worker", tags=["agente-worker"])
+
+
+@worker_router.get("/trabalho")
+def worker_trabalho(request: Request, espera: int = 20):
+    """Long-poll: devolve o próximo trabalho (pergunta de usuário) ou {} após 'espera' segundos."""
+    _worker_ok(request)
+    try:
+        return _trabalhos.get(timeout=max(1, min(espera, 50)))
+    except queue.Empty:
+        return {}
+
+
+class EventoWorker(BaseModel):
+    cid: str
+    evento: str          # text | tool | tool_result | confirm | error
+    dados: object = None
+
+
+@worker_router.post("/evento")
+def worker_evento(e: EventoWorker, request: Request):
+    _worker_ok(request)
+    _emitir(e.cid, e.evento, e.dados)
+    return {"ok": True}
+
+
+class FimWorker(BaseModel):
+    cid: str
+    texto: str = ""
+    passos: list = []
+    sessao: str = None
+
+
+@worker_router.post("/fim")
+def worker_fim(f: FimWorker, request: Request):
+    """Worker terminou a resposta: grava na conversa e emite done."""
+    _worker_ok(request)
+    conv = _ler(f.cid)
+    if f.sessao:
+        conv["sessao_claude"] = f.sessao
+    conv["mensagens"].append(dict(papel="assistant", texto=f.texto, passos=f.passos,
+                                  quando=datetime.now().isoformat(timespec="seconds")))
+    conv["atualizada_em"] = datetime.now().isoformat(timespec="seconds")
+    _salvar(conv)
+    with _lock:
+        _cancelar.pop(f.cid, None)
+    _emitir(f.cid, "done", dict(texto=f.texto))
+    return {"ok": True}
+
+
+@worker_router.get("/decisao/{token}")
+def worker_decisao(token: str, request: Request):
+    """Worker consulta se o usuário já clicou no cartão de confirmação."""
+    _worker_ok(request)
+    with _lock:
+        if token in _decisoes:
+            return {"decidido": True, "aprovado": _decisoes.pop(token)}
+    return {"decidido": False}
+
+
+@worker_router.get("/cancelado/{cid}")
+def worker_cancelado(cid: str, request: Request):
+    _worker_ok(request)
+    with _lock:
+        ev = _cancelar.get(cid)
+        return {"cancelado": bool(ev and ev.is_set())}

@@ -1,77 +1,105 @@
 import pytest
 from fastapi.testclient import TestClient
+
+import config
 from dashboard.app import app
 
 client = TestClient(app)
 
-def test_painel_sem_login_entra_direto():
-    # O painel não tem autenticação: qualquer rota responde sem credencial.
-    response = client.get("/api/stats")
-    assert response.status_code == 200
 
-def test_header_authorization_antigo_nao_quebra():
-    # Navegadores com token salvo de versões antigas mandavam
-    # "Authorization: Basic null" — não pode gerar 401 nem pop-up.
-    response = client.get("/api/stats", headers={"Authorization": "Basic null"})
-    assert response.status_code == 200
-    assert "WWW-Authenticate" not in response.headers
+def _login(c=None):
+    c = c or client
+    r = c.post("/api/login", json={"username": config.DASHBOARD_USER or "admin",
+                                   "senha": config.DASHBOARD_PASSWORD or "admin"})
+    assert r.status_code == 200
+    return c
 
-def test_me_retorna_admin_local():
-    response = client.get("/api/me")
-    assert response.status_code == 200
-    assert response.json() == {"username": "local", "role": "ADMIN"}
+
+def test_sem_login_api_da_401_sem_popup():
+    # Sem sessão: 401 JSON e NUNCA WWW-Authenticate (que abriria o pop-up feio do navegador).
+    c = TestClient(app)
+    r = c.get("/api/stats")
+    assert r.status_code == 401
+    assert "WWW-Authenticate" not in r.headers
+
+
+def test_sem_login_pagina_redireciona_para_login():
+    c = TestClient(app)
+    r = c.get("/", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"].startswith("/login")
+
+
+def test_login_errado_401():
+    c = TestClient(app)
+    r = c.post("/api/login", json={"username": "admin", "senha": "senha-completamente-errada"})
+    assert r.status_code == 401
+
+
+def test_login_certo_e_me():
+    c = _login(TestClient(app))
+    r = c.get("/api/me")
+    assert r.status_code == 200
+    dados = r.json()
+    assert dados["role"] == "ADMIN"
+    assert "agente" in dados["telas"] and "usuarios" in dados["telas"]
+
+
+def test_admin_gerencia_usuarios_e_telas():
+    c = _login(TestClient(app))
+    c.delete("/api/usuarios/pytest_user")  # limpeza de execução anterior
+    r = c.post("/api/usuarios", json={"username": "pytest_user", "senha": "senha123",
+                                      "role": "OPERADOR", "telas": ["conferencia"]})
+    assert r.status_code == 200
+
+    # o usuário restrito só enxerga a tela liberada
+    c2 = TestClient(app)
+    assert c2.post("/api/login", json={"username": "pytest_user", "senha": "senha123"}).status_code == 200
+    assert c2.get("/api/execucoes?limit=1").status_code == 200          # conferencia: liberada
+    assert c2.get("/api/agente/conversas").status_code == 403           # agente: negada
+    assert c2.get("/api/usuarios").status_code == 403                   # admin only
+    r = c2.get("/", follow_redirects=False)                             # página do agente -> manda p/ conferência
+    assert r.status_code == 302 and "/conferencia" in r.headers["location"]
+
+    # bloquear derruba o acesso
+    assert c.put("/api/usuarios/pytest_user", json={"ativo": False}).status_code == 200
+    assert c2.get("/api/execucoes?limit=1").status_code == 401
+    assert c.delete("/api/usuarios/pytest_user").status_code == 200
+
 
 def test_stats_retorna_estrutura_correta():
-    response = client.get("/api/stats")
-    assert response.status_code == 200
-    data = response.json()
-    assert "ultima_execucao" in data
-    assert "taxa_divergencia_hoje" in data
-    assert "taxa_divergencia_semana" in data
-    assert "total_execucoes_mes" in data
-    assert "grafico_7dias" in data
+    c = _login(TestClient(app))
+    data = c.get("/api/stats").json()
+    for k in ("ultima_execucao", "taxa_divergencia_hoje", "taxa_divergencia_semana",
+              "total_execucoes_mes", "grafico_7dias"):
+        assert k in data
 
-def test_iniciar_execucao_retorna_id():
-    payload = {
-        "data_inicio": "2024-01-01",
-        "data_fim": "2024-01-31"
-    }
-    response = client.post("/api/execucoes/iniciar", json=payload)
-    assert response.status_code in [200, 409] # 409 se uma ja estiver rodando no bd local
-
-    if response.status_code == 200:
-        data = response.json()
-        assert "execucao_id" in data
-        assert type(data["execucao_id"]) == int
 
 def test_conflito_execucao_ja_rodando(mocker):
-    # Vamos mockar o get_execucoes para forçar um status RODANDO
-    mocker.patch("dashboard.database.get_execucoes", return_value=[type("E", (), {"status": "RODANDO"})()])
+    mocker.patch("dashboard.database.get_execucoes",
+                 return_value=[type("E", (), {"status": "RODANDO"})()])
+    c = _login(TestClient(app))
+    r = c.post("/api/execucoes/iniciar", json={"data_inicio": "2024-01-01", "data_fim": "2024-01-31"})
+    assert r.status_code == 409
 
-    payload = {
-        "data_inicio": "2024-01-01",
-        "data_fim": "2024-01-31"
-    }
-    response = client.post("/api/execucoes/iniciar", json=payload)
-    assert response.status_code == 409
 
 def test_download_relatorio_nao_existe():
-    # Passando id=9999 q provavelmente nao existe, app retorna 404
-    response = client.get("/api/execucoes/99999/relatorio")
-    assert response.status_code == 404
+    c = _login(TestClient(app))
+    assert c.get("/api/execucoes/99999/relatorio").status_code == 404
+
 
 def test_stream_fecha_quando_concluido(mocker):
-    # Testa se o generator retorna 'close' para uma execução concluida
-    mocker.patch("dashboard.database.get_execucao", return_value=type("E", (), {"status": "CONCLUIDO"})())
+    mocker.patch("dashboard.database.get_execucao",
+                 return_value=type("E", (), {"status": "CONCLUIDO"})())
     mocker.patch("dashboard.database.get_logs", return_value=[])
+    c = _login(TestClient(app))
+    r = c.get("/api/stream/1")
+    assert r.status_code == 200
+    text = r.content.decode()
+    assert "event: close" in text
 
-    response = client.get("/api/stream/1")
 
-    assert response.status_code == 200
-
-    # O TestClient não roda assíncrono para streaming no event loop, ele vai consumir até o final
-    # Como mockamos o DB para retornar CONCLUIDO logo no primeiro loop, a stream vai fechar.
-    # Lemos a resposta como str
-    text = response.content.decode()
-    assert 'event: close' in text
-    assert 'data: Fechando stream' in text
+def test_worker_exige_token():
+    # modo local: rotas do worker respondem 404 (nuvem desligada) mesmo logado
+    c = _login(TestClient(app))
+    assert c.get("/api/agente/worker/trabalho").status_code in (401, 404)

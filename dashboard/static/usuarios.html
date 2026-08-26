@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuários · Garden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F6F3;--bg2:#ECF0EB;--surf:#fff;--line:#DCE3DD;--line2:#C9D3CC;--ink:#16211B;--mute:#6E7D75;--acc:#1E6B4F;--acc2:#2A8A66;--acc-soft:#E2F1EA;--bad:#B0442B;--bad-soft:#FBE5DF;--ok:#2F7A4E;--ok-soft:#DFF1E5;--mono:"JetBrains Mono",monospace}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0F1512;--bg2:#131B16;--surf:#171F1A;--line:#263129;--line2:#34423A;--ink:#E8EDE9;--mute:#8E9C94;--acc:#4FB58C;--acc2:#6CC9A2;--acc-soft:#173127;--bad:#EB8A70;--bad-soft:#3A2017;--ok:#6CC495;--ok-soft:#14302A}}
+:root[data-theme="dark"]{--bg:#0F1512;--bg2:#131B16;--surf:#171F1A;--line:#263129;--line2:#34423A;--ink:#E8EDE9;--mute:#8E9C94;--acc:#4FB58C;--acc2:#6CC9A2;--acc-soft:#173127;--bad:#EB8A70;--bad-soft:#3A2017;--ok:#6CC495;--ok-soft:#14302A}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:"Manrope",system-ui,sans-serif;font-size:14.5px}
+.bar{height:58px;display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--surf);border-bottom:1px solid var(--line)}
+.bar b{font-size:15px}
+.bar a{color:var(--mute);text-decoration:none;font-weight:700;font-size:13px}
+.bar a:hover{color:var(--ink)}
+.sp{flex:1}
+main{max-width:900px;margin:0 auto;padding:26px 18px 60px}
+h1{font-size:24px;letter-spacing:-.4px;margin-bottom:4px}
+.sub{color:var(--mute);margin-bottom:20px;font-size:14px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px}
+.card h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin-bottom:12px}
+.linha{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.campo{display:flex;flex-direction:column;gap:4px}
+.campo label{font-size:11.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}
+input,select{padding:9px 12px;border-radius:10px;border:1px solid var(--line2);background:transparent;color:var(--ink);font:inherit}
+input:focus{outline:none;border-color:var(--acc)}
+.telas{display:flex;gap:12px;align-items:center;padding:9px 0}
+.telas label{display:flex;gap:6px;align-items:center;font-weight:600;font-size:13.5px;cursor:pointer;text-transform:capitalize}
+.bt{padding:10px 16px;border:0;border-radius:11px;background:var(--acc);color:#fff;font:inherit;font-weight:800;cursor:pointer}
+.bt:hover{background:var(--acc2)}
+.bt-min{padding:6px 11px;border:1px solid var(--line2);border-radius:9px;background:transparent;color:var(--ink);font:inherit;font-weight:600;font-size:12.5px;cursor:pointer}
+.bt-min:hover{border-color:var(--acc)}
+.bt-min.perigo:hover{border-color:var(--bad);color:var(--bad)}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--bg2);color:var(--mute);margin-right:4px;text-transform:capitalize}
+.tag.adm{background:var(--acc-soft);color:var(--acc)}
+.tag.off{background:var(--bad-soft);color:var(--bad)}
+.aviso{display:none;margin:10px 0;padding:10px 13px;border-radius:10px;font-weight:600;font-size:13.5px}
+.aviso.ok{display:block;background:var(--ok-soft);color:var(--ok)}
+.aviso.erro{display:block;background:var(--bad-soft);color:var(--bad)}
+.chk{display:flex;gap:10px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="bar"><b>Usuários</b><span class="sp"></span><a href="/">← voltar ao Agente</a></div>
+<main>
+  <h1>Quem entra e o que cada um vê</h1>
+  <p class="sub">Você é o administrador: cadastra as pessoas e marca as telas que cada uma pode abrir. Administrador vê tudo.</p>
+
+  <div class="card">
+    <h3>Cadastrar usuário</h3>
+    <div class="linha">
+      <div class="campo"><label>Usuário</label><input id="n-user" placeholder="ex.: ruan"></div>
+      <div class="campo"><label>Senha</label><input id="n-senha" type="password" placeholder="mín. 6 caracteres"></div>
+      <div class="campo"><label>Perfil</label><select id="n-role"><option value="OPERADOR">Operador</option><option value="ADMIN">Administrador</option></select></div>
+      <div class="campo"><label>Telas</label><div class="telas" id="n-telas"></div></div>
+      <button class="bt" id="n-criar">Cadastrar</button>
+    </div>
+  </div>
+
+  <div class="aviso" id="aviso"></div>
+
+  <div class="card">
+    <h3>Usuários cadastrados</h3>
+    <table><thead><tr><th>Usuário</th><th>Perfil</th><th>Telas</th><th>Situação</th><th style="text-align:right">Ações</th></tr></thead>
+    <tbody id="corpo"></tbody></table>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let TELAS = [], EU = null;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401) { location.href = '/login?next=/usuarios'; throw new Error('login'); }
+  if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+  return j;
+}
+function aviso(t, ok) { const a = $('#aviso'); a.className = 'aviso ' + (ok ? 'ok' : 'erro'); a.textContent = t; if (ok) setTimeout(() => a.className = 'aviso', 4000); }
+function chkTelas(container, marcadas) {
+  container.innerHTML = TELAS.map(t => `<label><input type="checkbox" value="${t}" ${marcadas.includes(t) ? 'checked' : ''}> ${t === 'conferencia' ? 'conferência' : t === 'apropriacao' ? 'impostos' : t}</label>`).join('');
+}
+async function carregar() {
+  EU = await api('/api/me');
+  const d = await api('/api/usuarios');
+  TELAS = d.telas_disponiveis;
+  chkTelas($('#n-telas'), TELAS);
+  $('#corpo').innerHTML = d.usuarios.map(u => `
+    <tr data-u="${esc(u.username)}">
+      <td><b>${esc(u.username)}</b>${u.username === EU.username ? ' <span class="tag adm">você</span>' : ''}</td>
+      <td><span class="tag ${u.role === 'ADMIN' ? 'adm' : ''}">${u.role === 'ADMIN' ? 'admin' : 'operador'}</span></td>
+      <td>${u.role === 'ADMIN' ? '<span class="tag adm">todas</span>' : `<div class="chk telas-edit">${TELAS.map(t => `<label style="font-size:12.5px;display:flex;gap:4px;align-items:center"><input type="checkbox" value="${t}" ${u.telas.includes(t) ? 'checked' : ''}> ${t === 'conferencia' ? 'conferência' : t === 'apropriacao' ? 'impostos' : t}</label>`).join('')}</div>`}</td>
+      <td><span class="tag ${u.ativo ? '' : 'off'}">${u.ativo ? 'ativo' : 'bloqueado'}</span></td>
+      <td style="text-align:right;white-space:nowrap">
+        ${u.role !== 'ADMIN' ? `<button class="bt-min" data-salvar="${esc(u.username)}">salvar telas</button>` : ''}
+        <button class="bt-min" data-senha="${esc(u.username)}">senha</button>
+        ${u.username !== EU.username ? `<button class="bt-min ${u.ativo ? 'perigo' : ''}" data-bloq="${esc(u.username)}" data-v="${u.ativo ? 0 : 1}">${u.ativo ? 'bloquear' : 'desbloquear'}</button>
+        <button class="bt-min perigo" data-del="${esc(u.username)}">apagar</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+$('#n-criar').onclick = async () => {
+  try {
+    const telas = [...$('#n-telas').querySelectorAll('input:checked')].map(i => i.value);
+    await api('/api/usuarios', { method: 'POST', body: JSON.stringify({ username: $('#n-user').value, senha: $('#n-senha').value, role: $('#n-role').value, telas }) });
+    $('#n-user').value = ''; $('#n-senha').value = '';
+    aviso('Usuário cadastrado.', true); carregar();
+  } catch (e) { aviso(e.message, false); }
+};
+document.addEventListener('click', async ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  try {
+    if (b.dataset.salvar) {
+      const tr = b.closest('tr');
+      const telas = [...tr.querySelectorAll('.telas-edit input:checked')].map(i => i.value);
+      await api('/api/usuarios/' + encodeURIComponent(b.dataset.salvar), { method: 'PUT', body: JSON.stringify({ telas }) });
+      aviso('Telas salvas.', true);
+    } else if (b.dataset.senha) {
+      const s = prompt('Nova senha para ' + b.dataset.senha + ' (mín. 6):'); if (!s) return;
+      await api('/api/usuarios/' + encodeURIComponent(b.dataset.senha), { method: 'PUT', body: JSON.stringify({ senha: s }) });
+      aviso('Senha alterada.', true);
+    } else if (b.dataset.bloq) {
+      await api('/api/usuarios/' + encodeURIComponent(b.dataset.bloq), { method: 'PUT', body: JSON.stringify({ ativo: b.dataset.v === '1' }) });
+      aviso('Feito.', true); carregar();
+    } else if (b.dataset.del) {
+      if (!confirm('Apagar o usuário ' + b.dataset.del + '?')) return;
+      await api('/api/usuarios/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' });
+      aviso('Apagado.', true); carregar();
+    }
+  } catch (e) { aviso(e.message, false); }
+});
+carregar();
+</script>
+</body>
+</html>

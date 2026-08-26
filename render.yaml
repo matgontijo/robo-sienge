@@ -24,8 +24,17 @@ services:
           property: connectionString
       - key: PYTHON_VERSION
         value: "3.12.4"
-      # ATENÇÃO: o painel NÃO tem mais login. Publicar na nuvem deixa os dados
-      # financeiros abertos a qualquer pessoa com a URL — se voltar a usar o
-      # Render, proteja o serviço por fora (ex.: Cloudflare Access / IP allowlist).
-      # SIENGE/GEMINI só são necessários se um dia o ciclo rodar na nuvem;
-      # como o ciclo fica local, o painel na nuvem NÃO precisa deles.
+      # Login: o admin master é DASHBOARD_USER/DASHBOARD_PASSWORD (defina no Render).
+      - key: DASHBOARD_USER
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      # IA na nuvem = modo worker: o painel só enfileira; quem pensa é a SUA máquina
+      # rodando `python agente_worker.py` com o MESMO AGENTE_WORKER_TOKEN.
+      - key: AGENTE_MODO
+        value: nuvem
+      - key: AGENTE_WORKER_TOKEN
+        generateValue: true
+      # SIENGE/GEMINI não são necessários na nuvem: o ciclo e o agente rodam local.
