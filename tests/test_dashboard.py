@@ -47,7 +47,7 @@ def test_login_certo_e_me():
 
 def test_admin_gerencia_usuarios_e_telas():
     c = _login(TestClient(app))
-    c.delete("/api/usuarios/pytest_user")  # limpeza de execução anterior
+    c.delete("/api/usuarios/pytest@kfinserv.com.br")  # limpeza de execução anterior
     r = c.post("/api/usuarios", json={"username": "pytest@kfinserv.com.br", "senha": "senha123",
                                       "role": "OPERADOR", "telas": ["conferencia"]})
     assert r.status_code == 200
@@ -62,9 +62,9 @@ def test_admin_gerencia_usuarios_e_telas():
     assert r.status_code == 302 and "/conferencia" in r.headers["location"]
 
     # bloquear derruba o acesso
-    assert c.put("/api/usuarios/pytest_user", json={"ativo": False}).status_code == 200
+    assert c.put("/api/usuarios/pytest@kfinserv.com.br", json={"ativo": False}).status_code == 200
     assert c2.get("/api/execucoes?limit=1").status_code == 401
-    assert c.delete("/api/usuarios/pytest_user").status_code == 200
+    assert c.delete("/api/usuarios/pytest@kfinserv.com.br").status_code == 200
 
 
 def test_stats_retorna_estrutura_correta():
