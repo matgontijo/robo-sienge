@@ -26,11 +26,13 @@ const NOMES = {
     "ANEXO_ILEGIVEL": "Documento não lido (OCR pendente)",
     "PIX_NAO_VERIFICAVEL": "Chave Pix não permite confirmar o titular",
     "PAGAMENTO_FORMA_INCOMPATIVEL": "Forma de pagamento incompatível",
+    "LINHA_DIGITAVEL_AUSENTE": "Boleto sem linha digitável no Sienge",
     "FORMA_PAGAMENTO_AUSENTE": "Sem forma de pagamento cadastrada",
     "NF_SEM_CNPJ_DO_CREDOR": "CNPJ do credor não aparece na NF anexada",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
 };
 const DICAS = {
+    LINHA_DIGITAVEL_AUSENTE: "Digitar a linha digitável do boleto na parcela — a remessa sai sem código de pagamento",
     "PAGAMENTO_DESTINO_DIVERGENTE": "Exigir cessão de crédito ou autorização do credor",
     "BOLETO_VALOR_DIVERGENTE": "Pedir boleto correto ou ajustar o título",
     "BOLETO_VENCIMENTO_DIVERGENTE": "Pagar após o vencimento do boleto gera juros",

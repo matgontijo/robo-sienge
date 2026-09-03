@@ -207,6 +207,17 @@ class Reconciler:
                 criticidade="CRITICA", danfe_path=titulo.danfe_path,
             ))
 
+        # Forma BOLETO mas a informação de pagamento nem carregou: sem como conferir a linha -> CRÍTICA
+        if info_pagamento is None and titulo.forma_pagamento and "BOLETO" in titulo.forma_pagamento.upper():
+            divergencias.append(Divergencia(
+                titulo_id=titulo.id, titulo_numero=titulo.numero,
+                tipo="LINHA_DIGITAVEL_AUSENTE",
+                campo="Linha digitável",
+                valor_sienge="(informação de pagamento não carregada)", valor_nfe="-",
+                valor_boleto="Conferir manualmente: parcela é boleto e a linha digitável não pôde ser lida",
+                criticidade="CRITICA", danfe_path=titulo.danfe_path,
+            ))
+
         # CONFERÊNCIA DOS DADOS DE PAGAMENTO (anti-fraude: destino x fornecedor)
         if info_pagamento is not None:
             divergencias.extend(
@@ -594,15 +605,18 @@ class Reconciler:
                 criticidade="ATENCAO", danfe_path=titulo.danfe_path,
             ))
 
-        # 3) Forma "BOLETO" sem boleto identificado no anexo (ATENÇÃO)
-        if "BOLETO" in forma and boleto_anexo is None and not info.linha_digitavel:
+        # 3) Forma "BOLETO" sem LINHA DIGITÁVEL cadastrada no Sienge (CRÍTICA):
+        #    a remessa paga pelo que está NO SIENGE — boleto no anexo não resolve.
+        if "BOLETO" in forma and not info.linha_digitavel:
+            tem_anexo = boleto_anexo is not None
             divs.append(Divergencia(
                 titulo_id=titulo.id, titulo_numero=titulo.numero,
-                tipo="PAGAMENTO_FORMA_INCOMPATIVEL",
-                campo="Forma de Pagamento",
-                valor_sienge="BOLETO cadastrado", valor_nfe="-",
-                valor_boleto="Nenhum boleto/linha digitável encontrado",
-                criticidade="ATENCAO", danfe_path=titulo.danfe_path,
+                tipo="LINHA_DIGITAVEL_AUSENTE",
+                campo="Linha digitável",
+                valor_sienge="(vazia no Sienge)", valor_nfe="-",
+                valor_boleto=("Há boleto no anexo — digitar a linha digitável na parcela" if tem_anexo
+                              else "Sem boleto no anexo e sem linha digitável — anexar o boleto e cadastrar a linha"),
+                criticidade="CRITICA", danfe_path=titulo.danfe_path,
             ))
         return divs
 

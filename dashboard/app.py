@@ -184,6 +184,7 @@ NOMES_TIPO_PT = {
     "RETENCAO_ALIQUOTA_SUSPEITA": "Aliquota de retencao acima do usual",
     "RETENCAO_INDEVIDA_SIMPLES": "Retencao federal de fornecedor do Simples",
     "VENCIMENTO_DIVERGENTE": "Vencimento divergente",
+    "LINHA_DIGITAVEL_AUSENTE": "Boleto sem linha digitável cadastrada no Sienge",
 }
 
 @app.get("/api/execucoes/{execucao_id}/revisao/relatorio", dependencies=[Depends(requer_tela("conferencia"))])
