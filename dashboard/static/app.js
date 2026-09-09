@@ -375,7 +375,7 @@ function render() {
             vazio.innerHTML = `<div class="emoji">🎉</div><h2>Tudo revisado!</h2>
                 <p>${apr} aprovado(s) · ${rej} rejeitado(s). A remessa está liberada.</p>
                 <div class="acoes">${rej ? '<button class="primario" onclick="exportarRejeitados()">⬇ Baixar rejeitados</button>' : ""}
-                <button onclick="abrirPasta()">📁 Abrir pasta dos anexos</button></div>`;
+                ${(window.ME_TELAS||[]).includes('anexos') ? '<button onclick="abrirPasta()">📁 Abrir pasta dos anexos</button>' : ''}</div>`;
         } else if (busca) {
             vazio.innerHTML = `<div class="emoji">🔎</div><h2>Nenhum título encontrado</h2><p>Nada bate com “${BUSCA}”.</p>`;
         } else if (FILTRO === "REJEITADOS") {
@@ -710,6 +710,7 @@ window.fetch = async (...a) => { const r = await __fetch(...a); if (r.status ===
         const r = await fetch('/api/me');
         if (!r.ok) return;
         const me = await r.json();
+        window.ME_TELAS = me.telas || []; window.ME_ROLE = me.role;
         const some = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
         if (!(me.telas || []).includes('agente')) some('lnk-agente');
         if (!(me.telas || []).includes('apropriacao')) some('lnk-aprop');

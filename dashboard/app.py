@@ -274,7 +274,7 @@ def download_relatorio(execucao_id: int):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-@app.get("/api/execucoes/{execucao_id}/abrir-pasta", dependencies=[Depends(requer_tela("conferencia"))])
+@app.get("/api/execucoes/{execucao_id}/abrir-pasta", dependencies=[Depends(requer_tela("anexos"))])
 def abrir_pasta_anexos(execucao_id: int):
     """Abre, no Explorer da máquina que roda o painel (o PC do usuário), a pasta
     com os documentos deste ciclo: o dossiê (NF/boleto organizados) se existir,
@@ -293,7 +293,7 @@ def abrir_pasta_anexos(execucao_id: int):
             aberto = False
     return {"pasta": pasta, "existe": existe, "aberto": aberto}
 
-@app.get("/api/execucoes/{execucao_id}/danfe", dependencies=[Depends(requer_tela("conferencia"))])
+@app.get("/api/execucoes/{execucao_id}/danfe", dependencies=[Depends(requer_tela("anexos"))])
 def download_danfe(execucao_id: int, path: str):
     # Path traversal protection
     abs_path = os.path.abspath(path)

@@ -17,7 +17,7 @@ from fastapi import Depends, HTTPException, Request
 import config
 from dashboard import database as db
 
-TELAS = ["agente", "conferencia", "apropriacao"]          # telas atribuíveis
+TELAS = ["agente", "conferencia", "apropriacao", "anexos"]          # telas atribuíveis
 VALIDADE_S = 12 * 3600
 
 _SECRET = None

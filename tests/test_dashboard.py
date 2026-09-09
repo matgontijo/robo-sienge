@@ -61,6 +61,10 @@ def test_admin_gerencia_usuarios_e_telas():
     r = c2.get("/", follow_redirects=False)                             # página do agente -> manda p/ conferência
     assert r.status_code == 302 and "/conferencia" in r.headers["location"]
 
+    # sem a tela "anexos", operador não abre pasta nem baixa documento
+    assert c2.get("/api/execucoes/1/abrir-pasta").status_code == 403
+    assert c2.get("/api/execucoes/1/danfe?path=x").status_code == 403
+
     # operador é SÓ histórico: não inicia/aborta ciclo e configuração jamais
     assert c2.post("/api/execucoes/iniciar",
                    json={"data_inicio": "2024-01-01", "data_fim": "2024-01-31"}).status_code == 403
