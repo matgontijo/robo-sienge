@@ -325,8 +325,8 @@ _limpar_execucoes_orfas()  # limpeza na subida do painel
 
 @app.post("/api/execucoes/iniciar", dependencies=[Depends(requer_tela("conferencia"))])
 def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_current_user)):
-    if current_user.role == "LEITURA":
-        raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Apenas administrador pode iniciar ciclos")
 
     # Verifica se já tem alguma execução rodando (limpando zumbis antes)
     _limpar_execucoes_orfas()
@@ -365,8 +365,8 @@ def iniciar_execucao_relatorio(
     current_user: db.Usuario = Depends(get_current_user),
 ):
     """Inicia uma execução usando um relatório de Fluxo de Caixa enviado por upload."""
-    if current_user.role == "LEITURA":
-        raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Apenas administrador pode iniciar ciclos")
 
     ext = os.path.splitext(arquivo.filename or "")[1].lower()
     if ext not in (".xlsx", ".xlsm", ".pdf"):
@@ -425,8 +425,8 @@ def iniciar_execucao_relatorio(
 
 @app.post("/api/execucoes/{execucao_id}/abortar", dependencies=[Depends(requer_tela("conferencia"))])
 def abortar_execucao(execucao_id: int, current_user: db.Usuario = Depends(get_current_user)):
-    if current_user.role == "LEITURA":
-        raise HTTPException(status_code=403, detail="Usuário sem permissão para abortar execução")
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Apenas administrador pode abortar ciclos")
         
     execucao = db.get_execucao(execucao_id)
     if not execucao:

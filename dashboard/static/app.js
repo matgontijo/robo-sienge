@@ -703,3 +703,25 @@ if (location.hash === '#config') { setTimeout(() => { const b = document.getElem
 // 401 -> login
 const __fetch = window.fetch.bind(window);
 window.fetch = async (...a) => { const r = await __fetch(...a); if (r.status === 401 && !String(a[0]).includes('/api/login')) { location.href = '/login?next=' + encodeURIComponent(location.pathname); } return r; };
+
+// ---- permissões por perfil: operador só enxerga o histórico de ciclos ----
+(async () => {
+    try {
+        const r = await fetch('/api/me');
+        if (!r.ok) return;
+        const me = await r.json();
+        const some = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
+        if (!(me.telas || []).includes('agente')) some('lnk-agente');
+        if (!(me.telas || []).includes('apropriacao')) some('lnk-aprop');
+        if (me.role !== 'ADMIN') {
+            ['bt-config', 'bt-apres', 'bt-enviar', 'bt-abortar', 'file-relatorio'].forEach(some);
+            const dz = document.getElementById('dropzone');
+            if (dz) {
+                dz.onclick = null;
+                dz.style.pointerEvents = 'none';
+                const h = dz.querySelector('h1');
+                if (h) h.textContent = 'Somente o administrador inicia ciclos — acompanhe pelo histórico 🕘';
+            }
+        }
+    } catch (e) { /* sem sessão: o redirect do 401 resolve */ }
+})();
