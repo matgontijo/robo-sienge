@@ -711,19 +711,12 @@ window.fetch = async (...a) => { const r = await __fetch(...a); if (r.status ===
         if (!r.ok) return;
         const me = await r.json();
         window.ME_TELAS = me.telas || []; window.ME_ROLE = me.role;
-        if (!window.ME_TELAS.includes('anexos')) some('bt-pasta');
         const some = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
+        if (!window.ME_TELAS.includes('anexos')) some('bt-pasta');
         if (!(me.telas || []).includes('agente')) some('lnk-agente');
         if (!(me.telas || []).includes('apropriacao')) some('lnk-aprop');
         if (me.role !== 'ADMIN') {
-            ['bt-config', 'bt-apres', 'bt-enviar', 'bt-abortar', 'file-relatorio'].forEach(some);
-            const dz = document.getElementById('dropzone');
-            if (dz) {
-                dz.onclick = null;
-                dz.style.pointerEvents = 'none';
-                const h = dz.querySelector('h1');
-                if (h) h.textContent = 'Somente o administrador inicia ciclos — acompanhe pelo histórico 🕘';
-            }
+            ['bt-config', 'bt-apres', 'bt-abortar'].forEach(some);
         }
     } catch (e) { /* sem sessão: o redirect do 401 resolve */ }
 })();

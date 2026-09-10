@@ -365,8 +365,8 @@ def iniciar_execucao_relatorio(
     current_user: db.Usuario = Depends(get_current_user),
 ):
     """Inicia uma execução usando um relatório de Fluxo de Caixa enviado por upload."""
-    if current_user.role != "ADMIN":
-        raise HTTPException(status_code=403, detail="Apenas administrador pode iniciar ciclos")
+    if current_user.role == "LEITURA":
+        raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
 
     ext = os.path.splitext(arquivo.filename or "")[1].lower()
     if ext not in (".xlsx", ".xlsm", ".pdf"):
