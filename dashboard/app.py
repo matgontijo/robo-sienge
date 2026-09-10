@@ -325,8 +325,8 @@ _limpar_execucoes_orfas()  # limpeza na subida do painel
 
 @app.post("/api/execucoes/iniciar", dependencies=[Depends(requer_tela("conferencia"))])
 def iniciar_execucao(req: RunRequest, current_user: db.Usuario = Depends(get_current_user)):
-    if current_user.role != "ADMIN":
-        raise HTTPException(status_code=403, detail="Apenas administrador pode iniciar ciclos")
+    if current_user.role == "LEITURA":
+        raise HTTPException(status_code=403, detail="Usuário sem permissão para iniciar execução")
 
     # Verifica se já tem alguma execução rodando (limpando zumbis antes)
     _limpar_execucoes_orfas()
