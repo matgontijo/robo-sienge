@@ -711,6 +711,7 @@ window.fetch = async (...a) => { const r = await __fetch(...a); if (r.status ===
         if (!r.ok) return;
         const me = await r.json();
         window.ME_TELAS = me.telas || []; window.ME_ROLE = me.role;
+        if (!window.ME_TELAS.includes('anexos')) some('bt-pasta');
         const some = id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; };
         if (!(me.telas || []).includes('agente')) some('lnk-agente');
         if (!(me.telas || []).includes('apropriacao')) some('lnk-aprop');
