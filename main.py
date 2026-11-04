@@ -80,7 +80,7 @@ def main():
     run_parser.add_argument("--inicio", type=str, help="Data inicio formato YYYY-MM-DD")
     run_parser.add_argument("--fim", type=str, help="Data fim formato YYYY-MM-DD")
     run_parser.add_argument("--relatorio", type=str, help="Caminho do relatorio de Fluxo de Caixa (.xlsx ou .pdf). Quando informado, define a lista de titulos a conferir (ignora --inicio/--fim para selecao; datas ainda usadas na janela DDA).")
-    run_parser.add_argument("--dry-run", action="store_true", help="Executa o motor sem gerar relatrio ou email")
+    run_parser.add_argument("--dry-run", action="store_true", help="Indisponível: interrompe sem executar o ciclo")
     run_parser.add_argument("--debug", action="store_true", help="Ativa logs nvel DEBUG")
     
     # schedule
@@ -108,6 +108,9 @@ def main():
     add_user_parser.add_argument("role", type=str, choices=["ADMIN", "OPERADOR", "LEITURA"], help="Nivel de acesso (ADMIN, OPERADOR, LEITURA)")
     
     args = parser.parse_args()
+
+    if getattr(args, "dry_run", False):
+        parser.error("--dry-run ainda não foi implementado; nenhum ciclo foi executado. Use os testes offline para validação segura.")
     
     # Configura DEBUG se necessrio
     if getattr(args, "debug", False):
@@ -136,12 +139,6 @@ def main():
         if relatorio_path:
             logger.info(f"Fonte de títulos: relatório de Fluxo de Caixa ({relatorio_path}). "
                         f"Datas usadas apenas para a janela DDA.")
-
-        if args.dry_run:
-            logger.info("MODO DRY-RUN ATIVADO. Relatrios e notificaes no sero emitidos.")
-            # Fariamos o bypass de Report e Notifier se implementado
-            # Neste script para simplificar s logamos
-            pass
 
         orchestrator.executar_ciclo(d_inicio, d_fim, iniciado_por="cli", relatorio_path=relatorio_path)
         

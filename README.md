@@ -1,5 +1,9 @@
 # Robô de Conciliação Contas a Pagar
 
+Document extraction and accounts-payable reconciliation combining LLM-assisted reading with deterministic checks.
+
+Technical evidence, validation and limitations: [portfolio notes](docs/PORTFOLIO.md).
+
 Robô em Python para automatizar a conciliação de contas a pagar. O sistema integra as seguintes pontas:
 1. **Sienge ERP**: Extração de títulos a pagar e anexos em PDF.
 2. **Anthropic Claude (Vision)**: OCR inteligente para extrair a chave de acesso da NF-e presente no PDF anexo.
@@ -58,10 +62,7 @@ Para processar um período específico:
 ```bash
 python main.py run --inicio 2024-01-01 --fim 2024-01-31
 ```
-Modo teste (dry-run):
-```bash
-python main.py run --dry-run
-```
+A opção `--dry-run` ainda não implementa simulação e agora encerra com erro antes de executar o ciclo. Para validar sem serviços externos, use os testes isolados descritos nas [notas de portfólio](docs/PORTFOLIO.md).
 
 ### Rodar de forma agendada (Scheduler)
 Para deixar o robô rodando em background aguardando a hora configurada no `.env` (CRON_HORA e CRON_MINUTO):
